@@ -14,9 +14,6 @@ namespace GraphEditor {
         /* Useful, not required. */
         const string kNonbreakingSpace = toUTF8(0xA0);
 
-        /* Intended aspect ratio. */
-        const double kAspectRatio = 5.0 / 3.0;
-
         /* State graphics parameters. */
         const string kStateFontColor = "black";
 
@@ -440,11 +437,11 @@ namespace GraphEditor {
         }
 
         /* Boundaries of the world, represented as lines. */
-        vector<pair<GPoint, GPoint>> worldBoundaries() {
+        vector<pair<GPoint, GPoint>> worldBoundaries(double aspectRatio) {
             const double lft = 0;
             const double rgt = 1;
             const double top = 0;
-            const double bot = 1 / kAspectRatio;
+            const double bot = 1 / aspectRatio;
 
             return {
                 { { lft, top }, { rgt, top } },
@@ -460,7 +457,7 @@ namespace GraphEditor {
      */
     void Viewer::calculateEdgeEndpoints() {
         /* List of all line segments used. */
-        vector<pair<GPoint, GPoint>> lines = worldBoundaries();
+        vector<pair<GPoint, GPoint>> lines = worldBoundaries(mAspectRatio);
 
         /* First, handle linear transitions. */
         forEachEdge([&](Edge* transition) {
@@ -779,16 +776,25 @@ namespace GraphEditor {
         rawBounds = bounds;
 
         /* Too narrow? */
-        if (bounds.getWidth() / bounds.getHeight() <= kAspectRatio) {
+        if (bounds.getWidth() / bounds.getHeight() <= mAspectRatio) {
             width = bounds.getWidth();
-            height = width / kAspectRatio;
+            height = width / mAspectRatio;
         } else {
             height = bounds.getHeight();
-            width = height * kAspectRatio;
+            width = height * mAspectRatio;
         }
 
         baseX = bounds.getX() + (bounds.getWidth()  - width)  / 2.0;
         baseY = bounds.getY() + (bounds.getHeight() - height) / 2.0;
+    }
+
+    double Viewer::aspectRatio() {
+        return mAspectRatio;
+    }
+
+    void Viewer::aspectRatio(double ratio) {
+        mAspectRatio = ratio;
+        setBounds(rawBounds); // Recalculate to the last provided rectangle.
     }
 
     Node::Node(Viewer* editor, const GPoint& pt, std::size_t id, const std::string& label)
@@ -819,7 +825,7 @@ namespace GraphEditor {
 
         double y = pt.getY();
         if (y < kNodeRadius) y = kNodeRadius;
-        if (y > 1 / kAspectRatio - kNodeRadius) y = 1 / kAspectRatio - kNodeRadius;
+        if (y > 1 / owner->aspectRatio() - kNodeRadius) y = 1 / owner->aspectRatio() - kNodeRadius;
 
         mPos = { x, y };
         owner->calculateEdgeEndpoints();
@@ -1011,5 +1017,38 @@ namespace GraphEditor {
             auto edge = newEdgeNoAux(byIndex.at(from), byIndex.at(to), label);
             if (aux) edge->aux(aux->readEdgeAux(edge.get(), jEdge["aux"]));
         }
+    }
+
+    /* Aux defaults. */
+    shared_ptr<void> Aux::newNode(Node*) {
+        return nullptr;
+    }
+
+    shared_ptr<void> Aux::newEdge(Edge*) {
+        return nullptr;
+    }
+
+    shared_ptr<void> Aux::readNodeAux(Node*, JSON) {
+        return nullptr;
+    }
+
+    shared_ptr<void> Aux::readEdgeAux(Edge*, JSON) {
+        return nullptr;
+    }
+
+    JSON Aux::writeNodeAux(shared_ptr<void>) {
+        return nullptr;
+    }
+
+    JSON Aux::writeEdgeAux(shared_ptr<void>) {
+        return nullptr;
+    }
+
+    void Aux::readAux(JSON) {
+
+    }
+
+    JSON Aux::writeAux() {
+        return nullptr;
     }
 }

@@ -1,3 +1,23 @@
+/******************************************************************************
+ * Generic graph renderer. Without any fancy work on your part, this can render
+ * graphs in an abstract space.
+ *
+ * The space used has width 1 and height 1 / GraphViewer::kAspectRatio. Use
+ * these coordinates to position your objects.
+ *
+ * If you want to customize the look and feel of the system - say, by adding
+ * custom node graphs, you'll need to install an Aux (auxiliary) class.
+ * By overriding the methods on Aux, you can insert auxiliary data into each
+ * of the nodes and edges, which you can then use for whatever purposes you'd
+ * like.
+ *
+ * TODO: Restructure this to use inheritance rather than the pluggable Aux type?
+ * That would simplify the logic a bit. I think we still (?) need to keep the aux()
+ * helpers for the Node and Edge types because the return types need to sync with
+ * the base (?). We could also use templates here, which also works but makes things
+ * a bit more complex due to header-only-ness.
+ */
+
 #pragma once
 
 #include "gobjects.h"
@@ -14,6 +34,11 @@ namespace GraphEditor {
     class Viewer;
     class Node;
     class Edge;
+
+    /* Aspect ratio for the viewer. This is exposed so that items can be positioned
+     * appropriately in the logical space.
+     */
+    const double kDefaultAspectRatio = 5.0 / 3.0;
 
     /* Size of a node in the graphics system. This is exposed so that controllers can
      * determine how close something is to the center of a node (e.g. to determine
@@ -158,17 +183,17 @@ namespace GraphEditor {
     public:
         virtual ~Aux() = default;
 
-        virtual std::shared_ptr<void> newNode(Node* node) = 0;
-        virtual std::shared_ptr<void> newEdge(Edge* edge) = 0;
+        virtual std::shared_ptr<void> newNode(Node* node);
+        virtual std::shared_ptr<void> newEdge(Edge* edge);
 
-        virtual std::shared_ptr<void> readNodeAux(Node* node, JSON j) = 0;
-        virtual std::shared_ptr<void> readEdgeAux(Edge* edge, JSON j) = 0;
+        virtual std::shared_ptr<void> readNodeAux(Node* node, JSON j);
+        virtual std::shared_ptr<void> readEdgeAux(Edge* edge, JSON j);
 
-        virtual JSON writeNodeAux(std::shared_ptr<void> aux) = 0;
-        virtual JSON writeEdgeAux(std::shared_ptr<void> aux) = 0;
+        virtual JSON writeNodeAux(std::shared_ptr<void> aux);
+        virtual JSON writeEdgeAux(std::shared_ptr<void> aux);
 
-        virtual void readAux(JSON j) = 0;
-        virtual JSON writeAux() = 0;
+        virtual void readAux(JSON j);
+        virtual JSON writeAux();
 
         Viewer* viewer();
 
@@ -194,7 +219,11 @@ namespace GraphEditor {
          */
         Viewer(std::istream& in, std::shared_ptr<Aux> mAux = nullptr);
 
-        /* Seriealizes the viewer to a JSON object. */
+        /* Aspect ratio. */
+        double aspectRatio();
+        void aspectRatio(double ratio);
+
+        /* Serializes the viewer to a JSON object. */
         JSON toJSON();
 
         void setBounds(const GRectangle& bounds);
@@ -203,8 +232,8 @@ namespace GraphEditor {
          * explicit states and transitions that override it.
          */
         void draw(GCanvas* canvas,
-                  const std::unordered_map<Node*, NodeStyle>& stateStyles,
-                  const std::unordered_map<Edge*, EdgeStyle>& transitionStyles);
+                  const std::unordered_map<Node*, NodeStyle>& nodeStyles = {},
+                  const std::unordered_map<Edge*, EdgeStyle>& edgeStyles = {});
 
         /* Rectangle we were instructed to fill. */
         GRectangle bounds() const;
@@ -255,6 +284,7 @@ namespace GraphEditor {
         /* Geometry. */
         double baseX = 0, baseY = 0;
         double width = 0, height = 0;
+        double mAspectRatio = kDefaultAspectRatio;
 
         /* Where we were told to draw. */
         GRectangle rawBounds;
