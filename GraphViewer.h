@@ -1,21 +1,6 @@
 /******************************************************************************
  * Generic graph renderer. Without any fancy work on your part, this can render
  * graphs in an abstract space.
- *
- * The space used has width 1 and height 1 / GraphViewer::kAspectRatio. Use
- * these coordinates to position your objects.
- *
- * If you want to customize the look and feel of the system - say, by adding
- * custom node graphs, you'll need to install an Aux (auxiliary) class.
- * By overriding the methods on Aux, you can insert auxiliary data into each
- * of the nodes and edges, which you can then use for whatever purposes you'd
- * like.
- *
- * TODO: Restructure this to use inheritance rather than the pluggable Aux type?
- * That would simplify the logic a bit. I think we still (?) need to keep the aux()
- * helpers for the Node and Edge types because the return types need to sync with
- * the base (?). We could also use templates here, which also works but makes things
- * a bit more complex due to header-only-ness.
  */
 
 #pragma once
@@ -31,9 +16,12 @@
 #include <istream>
 
 namespace GraphEditor {
-    class Viewer;
+    class ViewerBase;
     class Node;
     class Edge;
+
+    class NodeArgs;
+    class EdgeArgs;
 
     /* Aspect ratio for the viewer. This is exposed so that items can be positioned
      * appropriately in the logical space.
@@ -90,11 +78,6 @@ namespace GraphEditor {
         std::string color = kEdgeColor;
     };
 
-
-    /* Node renderer type. Responsible for drawing an individual node. */
-    using NodeRenderer = std::function<void(Viewer*, GCanvas*, const NodeStyle& style)>;
-    NodeRenderer defaultRendererFor(Node* node, bool drawLabel = true);
-
     /* Base type for graph entities. */
     class Entity {
     public:
@@ -104,6 +87,8 @@ namespace GraphEditor {
     /* A node in the graph. */
     class Node: public Entity {
     public:
+        virtual ~Node() = default;
+
         /* Each node is assigned a sequential number starting at 0. These numbers
          * count up and are recycled if nodes are deleted.
          */
@@ -117,17 +102,30 @@ namespace GraphEditor {
          * corner of the content area and (1, 1 / kAspectRatio) is the lower-right corner.
          */
         const GPoint& position();
-        void   position(const GPoint& pt);
+        void  position(const GPoint& pt);
 
-        NodeRenderer renderer();
-        void renderer(NodeRenderer renderer);
+        /* Draws the given node. */
+        virtual void draw(ViewerBase* base,        // For converting units
+                          GCanvas*    canvas,      // Where to draw
+                          const NodeStyle& style); // Style
 
-        std::shared_ptr<void> aux();
-        void aux(std::shared_ptr<void> aux);
+        /* Serialize auxiliary data to JSON. By default this just returns null,
+         * but you can override this to customize the data stashed away.
+         */
+        virtual JSON toJSON();
+
+    protected:
+        /* This exists so that Node can be used directly. It completely ignores
+         * the aux data. You shouldn't need to use this constructor.
+         */
+        Node(ViewerBase* viewer,
+             const NodeArgs& args,
+             JSON /* ignored */);
+
+        Node(ViewerBase* viewer, const NodeArgs& args);
 
     private:
-        Node(Viewer* viewer, const GPoint& pt, std::size_t index, const std::string& label);
-        Viewer* owner;
+        ViewerBase* owner;
 
         /* Position in logical space. */
         GPoint mPos;
@@ -135,29 +133,37 @@ namespace GraphEditor {
         std::size_t mIndex;
 
         std::string mLabel;
-        NodeRenderer mRenderer;
 
-        std::shared_ptr<void> mAux;
-
-        friend class Viewer;
+        friend class ViewerBase;
+        template <typename N, typename T> friend class Viewer;
     };
 
     class Edge: public Entity {
     public:
+        virtual ~Edge() = default;
+
         Node* from();
         Node* to();
 
         std::string label();
         void label(const std::string& label);
 
-        std::shared_ptr<void> aux();
-        void aux(std::shared_ptr<void> aux);
+        /* Serialize auxiliary data to JSON. By default this just returns null,
+         * but you can override this to customize the data stashed away.
+         */
+        virtual JSON toJSON();
+
+    protected:
+        /* This exists so that you can use Edge as a default type for the viewer.
+         * You should not need to use this constructor directly.
+         */
+        Edge(ViewerBase* owner, const EdgeArgs& args,
+             JSON /* ignored */);
+
+        Edge(ViewerBase* owner, const EdgeArgs& args);
 
     private:
-        friend class Viewer;
-        Viewer* mOwner;
-
-        Edge(Viewer* owner, Node* from, Node* to, const std::string& label);
+        ViewerBase* mOwner;
 
         /* Origin / endpoint. */
         Node* mFrom, *mTo;
@@ -165,60 +171,19 @@ namespace GraphEditor {
         /* Label, if any. */
         std::string mLabel;
 
-        std::shared_ptr<void> mAux;
-
         /* Style of transition used. */
         std::shared_ptr<struct EdgeRender> style;
+
+        friend class ViewerBase;
+        template <typename N, typename T> friend class Viewer;
     };
 
-    /* Base type for auxiliary data associated with the viewer. If you associate
-     * auxiliary data with the viewer, then
-     *
-     * 1. each new node will have auxiliary data automatically built for it;
-     * 2. each new edge will have auxiliary data automatically build for it;
-     * 3. when the viewer is serialized, the aux data per node/edge is too; and
-     * 4. when the viewer is serialized, some additional aux data can be stored too.
+    /* Base type containing the logic to draw a graph. You will likely not
+     * need to make use of this type directly; instead, use the parameterized
+     * Viewer type.
      */
-    class Aux {
+    class ViewerBase {
     public:
-        virtual ~Aux() = default;
-
-        virtual std::shared_ptr<void> newNode(Node* node);
-        virtual std::shared_ptr<void> newEdge(Edge* edge);
-
-        virtual std::shared_ptr<void> readNodeAux(Node* node, JSON j);
-        virtual std::shared_ptr<void> readEdgeAux(Edge* edge, JSON j);
-
-        virtual JSON writeNodeAux(std::shared_ptr<void> aux);
-        virtual JSON writeEdgeAux(std::shared_ptr<void> aux);
-
-        virtual void readAux(JSON j);
-        virtual JSON writeAux();
-
-        Viewer* viewer();
-
-    private:
-        Viewer* mViewer;
-        friend class Viewer;
-    };
-
-    /* View of an automaton that supports styling, highlighting, etc.
-     *
-     * Although this is called a "viewer," it does support editing of the underlying
-     * graph via adding and removing nodes and edges and repositioning things. The
-     * idea is that you can load a viewer from a file by populating it with a bunch
-     * of new nodes and edges.
-     */
-    class Viewer {
-    public:
-        /* Constructs a viewer with the associated auxiliary data. */
-        Viewer(std::shared_ptr<Aux> mAux = nullptr);
-
-        /* Deserializes the viewer from the JSON source. If aux is non-null, aux will
-         * be used to guide the deserialization.
-         */
-        Viewer(std::istream& in, std::shared_ptr<Aux> mAux = nullptr);
-
         /* Aspect ratio. */
         double aspectRatio();
         void aspectRatio(double ratio);
@@ -241,25 +206,6 @@ namespace GraphEditor {
         /* Rectangle computed to contain all the content. */
         GRectangle computedBounds() const;
 
-        Node* newNode(const GPoint& location);
-        void removeNode(Node* state);
-        Node* nodeLabeled(const std::string& name);
-
-        /* TODO: Semantics if the transition already exists? */
-        Edge* newEdge(Node* from, Node* to, const std::string& label = "");
-        void removeEdge(Edge* edge);
-
-        /* What's at this position? */
-        Node* nodeAt(GPoint pt);
-        Edge* edgeAt(GPoint pt);
-
-        std::size_t numNodes();
-        void forEachNode(std::function<void(Node*)>);
-        void forEachEdge(std::function<void(Edge*)>);
-
-        bool hasEdge(Node* from, Node* to);
-        Edge* edgeBetween(Node* from, Node* to);
-
         /* Coordinate changes. */
         double     graphicsToWorld(double width);
         GPoint     graphicsToWorld(GPoint pt);
@@ -274,12 +220,19 @@ namespace GraphEditor {
         void drawArrow(GCanvas* canvas, const GPoint& from, const GPoint& to,
                        double thickness, const std::string& color);
 
-        /* Aux structure, if any. */
-        std::shared_ptr<Aux> aux();
+        std::size_t numNodes();
+
+        /* TODO: Hide all five of these; they're overridden in the derived type. */
+        bool hasEdge(Node* from, Node* to);
+        void forEachNode(std::function<void(Node*)>);
+        void forEachEdge(std::function<void(Edge*)>);
+        Node* nodeAt(const GPoint& pt);
+        Edge* edgeAt(const GPoint& pt);
+
+    protected:
+        virtual JSON auxData();
 
     private:
-        /* Auxiliary data. */
-        std::shared_ptr<Aux> mAux;
 
         /* Geometry. */
         double baseX = 0, baseY = 0;
@@ -300,8 +253,14 @@ namespace GraphEditor {
          */
         std::set<int> freeNodeIDs;
 
-        /* Full constructor for states. */
-        std::shared_ptr<Node> newNode(const GPoint& location, const std::string& name, bool isStart, bool isAccepting);
+        JSON nodesToJSON();
+        JSON edgesToJSON();
+
+        JSON toJSON(Node* node);
+        JSON toJSON(Edge* edge);
+
+        Edge* edgeBetween(Node* from, Node* to);
+        Node* nodeLabeled(const std::string& label);
 
         /* Graphics routines. */
         void drawTransition(GCanvas* canvas, std::shared_ptr<Edge> transition);
@@ -309,26 +268,232 @@ namespace GraphEditor {
         void drawTransitionLabel(GCanvas* canvas, const GPoint& p0, const GPoint& p1,
                                  const std::string& label, bool hugLine);
         void drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                           double thickness, const std::string& color);
-
-        /* Handles everything but aux data. */
-        std::shared_ptr<Node> newNodeNoAux(const GPoint& pt, size_t index, const std::string& label);
-        std::shared_ptr<Edge> newEdgeNoAux(Node* from, Node* to, const std::string& label);
+                           double thickness, const std::string& color);        
 
         /* Recalculates the renderer for each transition. */
         void calculateEdgeEndpoints();
-
-        /* Serialization / deserialization utilities. */
-        JSON nodesToJSON();
-        JSON edgesToJSON();
-        JSON auxToJSON();
-
-        JSON toJSON(Node* node);
-        JSON toJSON(Edge* edge);
 
         friend struct LineEdge;
         friend struct LoopEdge;
         friend class  Node;
         friend class  Edge;
+
+        template <typename NodeType, typename EdgeType>
+        friend class Viewer;
     };
+
+    /* Viewer / editor for an underlying graph. This is parameterized on the types
+     * of the nodes and edges so that you can substitute your own types in as needed.
+     *
+     * For this to work properly, the node and edge types must be subtypes of Node
+     * and Edge.
+     */
+    template <typename N = Node, typename E = Edge>
+    class Viewer: public ViewerBase {
+    public:
+        using NodeType = N;
+        using EdgeType = E;
+
+        /* Constructs a new, empty viewer. */
+        Viewer() = default;
+
+        /* Deserializes the viewer from the given JSON data. The JSON data is
+         * presumed to have been written by a previous Viewer.
+         *
+         * This JSON object may have a field named "aux." If it does, that data
+         * is purely for use by the subclasses and can be used however best
+         * suits the viewer.
+         */
+        Viewer(JSON data);
+
+        NodeType* newNode(const GPoint& location);
+        void removeNode(NodeType* state);
+        NodeType* nodeLabeled(const std::string& name);
+
+        /* TODO: Semantics if the transition already exists? */
+        EdgeType* newEdge(NodeType* from, NodeType* to, const std::string& label = "");
+        void removeEdge(EdgeType* edge);
+
+        /* What's at this position? */
+        NodeType* nodeAt(const GPoint& pt);
+        EdgeType* edgeAt(const GPoint& pt);
+
+        void forEachNode(std::function<void(NodeType*)>);
+        void forEachEdge(std::function<void(EdgeType*)>);
+
+        EdgeType* edgeBetween(NodeType* from, NodeType* to);
+
+    private:
+        /* Full constructors. */
+        std::shared_ptr<NodeType> newNode(const GPoint& pt, size_t index, const std::string& label, JSON aux);
+        std::shared_ptr<EdgeType> newEdge(NodeType* from, NodeType* to, const std::string& label,   JSON aux);
+    };
+
+
+
+    /***** Implementation Below This Point *****/
+
+    /* Node and edge constructor args. */
+    class NodeArgs {
+        GPoint pt;
+        std::size_t index;
+        std::string label;
+
+        NodeArgs(const GPoint& pt, std::size_t index, const std::string& label) : pt(pt), index(index), label(label) {}
+
+        friend class Node;
+        template <typename, typename> friend class Viewer;
+    };
+
+    class EdgeArgs {
+        Node* from;
+        Node* to;
+        std::string label;
+
+        EdgeArgs(Node* from, Node* to, const std::string& label) : from(from), to(to), label(label) {}
+
+
+        friend class Edge;
+        template <typename, typename> friend class Viewer;
+    };
+
+    template <typename NodeType, typename EdgeType>
+    NodeType* Viewer<NodeType, EdgeType>::newNode(const GPoint& pt) {
+        /* Get the ID for this state. */
+        size_t id = numNodes();
+        if (!freeNodeIDs.empty()) {
+            id = *freeNodeIDs.begin();
+            freeNodeIDs.erase(freeNodeIDs.begin());
+        }
+
+        auto result = newNode(pt, id, "", nullptr);
+        return result.get();
+    }
+
+    template <typename NodeType, typename EdgeType>
+    std::shared_ptr<NodeType> Viewer<NodeType, EdgeType>::newNode(const GPoint& pt, size_t index, const std::string& label, JSON j) {
+        auto result = std::shared_ptr<NodeType>(new NodeType(this, NodeArgs{pt, index, label}, j));
+        nodes.insert(result);
+        return result;
+    }
+
+    template <typename NodeType, typename EdgeType>
+    EdgeType* Viewer<NodeType, EdgeType>::newEdge(NodeType* from, NodeType* to, const std::string& label) {
+        return newEdge(from, to, label, nullptr).get();
+    }
+
+    template <typename NodeType, typename EdgeType>
+    std::shared_ptr<EdgeType> Viewer<NodeType, EdgeType>::newEdge(NodeType* from, NodeType* to, const std::string& label, JSON aux) {
+        auto edge = std::shared_ptr<EdgeType>(new EdgeType(this, EdgeArgs{from, to, label}, aux));
+        edges[from][to] = edge;
+        calculateEdgeEndpoints();
+        return edge;
+    }
+
+    template <typename NodeType, typename EdgeType>
+    NodeType* Viewer<NodeType, EdgeType>::nodeAt(const GPoint& pt) {
+        return static_cast<NodeType*>(ViewerBase::nodeAt(pt));
+    }
+
+    template <typename NodeType, typename EdgeType>
+    EdgeType* Viewer<NodeType, EdgeType>::edgeAt(const GPoint& pt) {
+        return static_cast<EdgeType*>(ViewerBase::edgeAt(pt));
+    }
+
+    template <typename NodeType, typename EdgeType>
+    void Viewer<NodeType, EdgeType>::removeNode(NodeType* node) {
+        auto itr = find_if(nodes.begin(), nodes.end(), [&](std::shared_ptr<Node> n) {
+             return n.get() == node;
+        });
+        if (itr == nodes.end()) return;
+
+        nodes.erase(itr);
+
+        /* Remove transitions from the state. */
+        edges.erase(node);
+
+        /* Remove transitions to the state. */
+        for (auto& e1: edges) {
+            auto itr = e1.second.begin();
+            while (itr != e1.second.end()) {
+                if (itr->first == node) {
+                    itr = e1.second.erase(itr);
+                } else {
+                    ++itr;
+                }
+            }
+        }
+
+        freeNodeIDs.insert(node->index());
+
+        calculateEdgeEndpoints();
+    }
+
+    template <typename NodeType, typename EdgeType>
+    void Viewer<NodeType, EdgeType>::removeEdge(EdgeType* transition) {
+        edges[transition->from()].erase(transition->to());
+        calculateEdgeEndpoints();
+    }
+
+    template <typename NodeType, typename EdgeType>
+    EdgeType* Viewer<NodeType, EdgeType>::edgeBetween(NodeType* from, NodeType* to) {
+        return static_cast<EdgeType*>(ViewerBase::edgeBetween(from, to));
+    }
+
+    template <typename NodeType, typename EdgeType>
+    NodeType* Viewer<NodeType, EdgeType>::nodeLabeled(const std::string& label) {
+        return static_cast<NodeType*>(ViewerBase::nodeLabeled(label));
+    }
+
+    /* Deserialize. */
+    template <typename NodeType, typename EdgeType>
+    Viewer<NodeType, EdgeType>::Viewer(JSON j) {
+        /* Decompress nodes. */
+        std::size_t maxIndex = 0;
+        std::map<std::size_t, Node*> byIndex;
+        for (JSON jNode: j["nodes"]) {
+            std::size_t index = jNode["index"].asInteger();
+            std::string label = jNode["label"].asString();
+            GPoint pos        = { jNode["pos"][0].asDouble(), jNode["pos"][1].asDouble() };
+
+            auto node = newNode(pos, index, label, jNode["aux"]);
+
+            byIndex[node->index()] = node.get();
+
+            maxIndex = std::max(maxIndex, index);
+        }
+
+        /* Loop over nodes again, filling in missing node IDs. */
+        for (size_t i = 0; i < maxIndex; i++) {
+            freeNodeIDs.insert(i);
+        }
+        for (auto node: nodes) {
+            freeNodeIDs.erase(node->index());
+        }
+
+        /* Decompress edges. */
+        for (JSON jEdge: j["edges"]) {
+            std::size_t from  = jEdge["from"].asInteger();
+            std::size_t to    = jEdge["to"].asInteger();
+            std::string label = jEdge["label"].asString();
+            auto edge         = newEdge(static_cast<NodeType*>(byIndex.at(from)),
+                                             static_cast<NodeType*>(byIndex.at(to)),
+                                             label,
+                                             jEdge["aux"]);
+        }
+    }
+
+    template <typename NodeType, typename EdgeType>
+    void Viewer<NodeType, EdgeType>::forEachNode(std::function<void(NodeType*)> callback) {
+        return ViewerBase::forEachNode([&](Node* node) {
+            return callback(static_cast<NodeType*>(node));
+        });
+    }
+
+    template <typename NodeType, typename EdgeType>
+    void Viewer<NodeType, EdgeType>::forEachEdge(std::function<void(EdgeType*)> callback) {
+        return ViewerBase::forEachEdge([&](Edge* edge) {
+            return callback(static_cast<EdgeType*>(edge));
+        });
+    }
 }

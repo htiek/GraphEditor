@@ -1,36 +1,31 @@
 #include "GraphEditor.h"
 #include "GVector.h"
-using namespace std;
 
 namespace GraphEditor {
     namespace {
         /* Active state is displayed with a highlight color. */
-        const string kActiveStateColor = "#ffd320"; // Slide highlight color
+        const std::string kActiveStateColor = "#ffd320"; // Slide highlight color
 
         /* Hovered state is displayed with a thicker, special border. */
-        const string kHoverBorderColor = "blue";
+        const std::string kHoverBorderColor = "blue";
         const double kHoverBorderWidth = 16.0 / 1000; // 8px on a 1000px window
 
         /* How far, in radians, you need to travel before it counts as a self-loop. */
         const double kSelfTransitionThreshold = M_PI / 3;
 
-        const double kNewTransitionWidth = 3;
-        const string kNewTransitionColor = "red";
+        const double kNewTransitionWidth = 3.0 / 1000; // 3px on 1000px window
+        const std::string kNewTransitionColor = "red";
 
-        const string kActiveTransitionColor = "#ff950e";
+        const std::string kActiveTransitionColor = "#ff950e";
         const double kActiveTransitionWidth = GraphEditor::kEdgeTolerance;
-        const string kHoverTransitionColor = "blue"; // Slide highlight dark color
+        const std::string kHoverTransitionColor = "blue"; // Slide highlight dark color
     }
 
-    Editor::Editor(shared_ptr<Viewer> viewer) : mViewer(viewer) {
+    EditorBase::EditorBase(std::shared_ptr<ViewerBase> viewer) : mViewer(viewer) {
         // Handled above
     }
 
-    std::shared_ptr<Viewer> Editor::viewer() {
-        return mViewer;
-    }
-
-    void Editor::setActive(Entity* active) {
+    void EditorBase::setActive(Entity* active) {
         if (auto* node = dynamic_cast<Node*>(active)) {
             setActiveNode(node);
         } else if (auto* edge = dynamic_cast<Edge*>(active)) {
@@ -46,7 +41,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::setHover(Entity* hover) {
+    void EditorBase::setHover(Entity* hover) {
         if (auto* node = dynamic_cast<GraphEditor::Node*>(hover)) {
             setHoverNode(node);
         } else if (auto* edge = dynamic_cast<GraphEditor::Edge*>(hover)) {
@@ -62,7 +57,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::setActiveNode(Node* state) {
+    void EditorBase::setActiveNode(Node* state) {
         if (activeNode != state) requestRepaint();
         activeNode = state;
 
@@ -71,7 +66,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::setActiveEdge(Edge* transition) {
+    void EditorBase::setActiveEdge(Edge* transition) {
         if (activeEdge != transition) requestRepaint();
         activeEdge = transition;
 
@@ -80,7 +75,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::setHoverNode(Node* state) {
+    void EditorBase::setHoverNode(Node* state) {
         if (hoverNode != state) requestRepaint();
         hoverNode = state;
 
@@ -89,7 +84,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::setHoverEdge(Edge* transition) {
+    void EditorBase::setHoverEdge(Edge* transition) {
         if (hoverEdge != transition) requestRepaint();
         hoverEdge = transition;
 
@@ -98,14 +93,14 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::mouseDoubleClicked(double x, double y) {
+    void EditorBase::mouseDoubleClicked(double x, double y) {
         GPoint pos = mViewer->graphicsToWorld(GPoint{x, y});
 
         /* Anything there? If so, don't do anything. */
         if (mViewer->nodeAt(pos)) return;
         if (mViewer->edgeAt(pos)) return;
 
-        auto state = mViewer->newNode(pos);
+        auto state = newNode(pos);
 
         setHover(state);
         setActive(state);
@@ -113,7 +108,7 @@ namespace GraphEditor {
         dirty();
     }
 
-    void Editor::mouseMoved(double x, double y) {
+    void EditorBase::mouseMoved(double x, double y) {
         /* Skip this if we're dragging the mouse. */
         if (dragType != DragType::NONE) return;
 
@@ -138,7 +133,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::mousePressed(double x, double y) {
+    void EditorBase::mousePressed(double x, double y) {
         GPoint pt = mViewer->graphicsToWorld(GPoint{x, y});
 
         /* Did we hit a state? */
@@ -166,7 +161,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::dragState(GPoint pt) {
+    void EditorBase::dragState(GPoint pt) {
         /* TODO: Collisions with other states? */
         if (hoverNode) {
             hoverNode->position(hoverNode->position() + (lastState - hoverNode->position()));
@@ -176,14 +171,14 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::dragTransition(GPoint pt) {
+    void EditorBase::dragTransition(GPoint pt) {
         dragEdge1 = pt;
 
         setHover(mViewer->nodeAt(pt));
         requestRepaint();
     }
 
-    void Editor::mouseDragged(double x, double y) {
+    void EditorBase::mouseDragged(double x, double y) {
         if (dragType == DragType::NODE) {
             dragState(mViewer->graphicsToWorld(GPoint{x, y}));
         } else if (dragType == DragType::EDGE) {
@@ -191,7 +186,7 @@ namespace GraphEditor {
         }
     }
 
-    void Editor::mouseReleased(double x, double y) {
+    void EditorBase::mouseReleased(double x, double y) {
         if (dragType == DragType::EDGE) {
             finishCreatingEdge(mViewer->graphicsToWorld(GPoint{ x, y }));
         }
@@ -199,7 +194,7 @@ namespace GraphEditor {
         requestRepaint();
     }
 
-    void Editor::finishCreatingEdge(GPoint pt) {
+    void EditorBase::finishCreatingEdge(GPoint pt) {
         /* For starters, see what we hit. */
         auto end = mViewer->nodeAt(pt);
 
@@ -235,50 +230,26 @@ namespace GraphEditor {
             }
         }
 
-        /* If the transition already exists, select it and do nothing. */
-        auto* edge = mViewer->edgeBetween(edgeStart, end);
+        /* If the edge already exists, select it and do nothing. */
+        auto* edge = edgeBetween(edgeStart, end);
         if (!edge) {
-            edge = mViewer->newEdge(edgeStart, end);
+            edge = newEdge(edgeStart, end);
             dirty();
         }
 
         setActive(edge);
     }
 
-    void Editor::deleteNode(Node* node) {
-        /* Remove the state. */
-        mViewer->removeNode(node);
-
-        /* If this was the active node, deselect it. */
-        if (node == activeNode) setActive(nullptr);
-        if (node == hoverNode)  setHover(nullptr);
-
-        /* Deselect the active transition; it may no longer be valid! */
-        if (activeEdge) setActive(nullptr);
-        if (hoverEdge)  setHover(nullptr);
-
-        dirty();
-    }
-
-    void Editor::deleteEdge(Edge* edge) {
-        /* Remove from the list of transitions. */
-        mViewer->removeEdge(edge);
-
-        if (activeEdge == edge) setActive(nullptr);
-        if (hoverEdge  == edge) setHover(nullptr);
-        dirty();
-    }
-
-    void Editor::dirty() {
+    void EditorBase::dirty() {
         for (auto listener: mListeners) {
             listener->isDirty();
         }
     }
 
-    void Editor::drawGraph(GCanvas* canvas) {
+    void EditorBase::drawGraph(GCanvas* canvas) {
         /* Configure styles. */
-        unordered_map<Node*, NodeStyle> stateStyles;
-        unordered_map<Edge*, EdgeStyle> transitionStyles;
+        std::unordered_map<Node*, NodeStyle> stateStyles;
+        std::unordered_map<Edge*, EdgeStyle> transitionStyles;
 
         /* Active and hover states are NOT mutually exclusive! */
         if (activeNode) {
@@ -303,24 +274,24 @@ namespace GraphEditor {
         mViewer->draw(canvas, stateStyles, transitionStyles);
     }
 
-    void Editor::drawDraggedEdge(GCanvas* canvas) {
+    void EditorBase::drawDraggedEdge(GCanvas* canvas) {
         if (dragType == DragType::EDGE) {
             mViewer->drawArrow(canvas, dragEdge0, dragEdge1, kNewTransitionWidth, kNewTransitionColor);
         }
     }
 
-    void Editor::draw(GCanvas* canvas) {
+    void EditorBase::draw(GCanvas* canvas) {
         drawGraph(canvas);
         drawDraggedEdge(canvas);
     }
 
-    void Editor::requestRepaint() {
+    void EditorBase::requestRepaint() {
         for (auto listener: mListeners) {
             listener->needsRepaint();
         }
     }
 
-    void Editor::addListener(std::shared_ptr<Listener> listener) {
+    void EditorBase::addListener(std::shared_ptr<Listener> listener) {
         mListeners.push_back(listener);
     }
 

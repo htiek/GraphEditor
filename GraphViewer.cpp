@@ -7,15 +7,14 @@
 #include <unordered_map>
 #include <sstream>
 #include <cctype>
-using namespace std;
 
 namespace GraphEditor {
     namespace {
         /* Useful, not required. */
-        const string kNonbreakingSpace = toUTF8(0xA0);
+        const std::string kNonbreakingSpace = toUTF8(0xA0);
 
         /* State graphics parameters. */
-        const string kStateFontColor = "black";
+        const std::string kStateFontColor = "black";
 
         /* Transition graphics parameters. */
         const double kLoopTransitionRadius = GraphEditor::kNodeRadius * 0.75;
@@ -24,7 +23,7 @@ namespace GraphEditor {
         const double kLoopLabelLength = 150 / 1000.0;
 
         /* Font and height for transitions. */
-        const string kTransitionFontColor = GraphEditor::kEdgeColor;
+        const std::string kTransitionFontColor = GraphEditor::kEdgeColor;
         const double kTransitionTextHeight = 48.0 / 1000; // 24pt in 1000px window
 
         /* Amount to offset the label by relative to the transition. */
@@ -48,19 +47,19 @@ namespace GraphEditor {
 
     /* Transitions can be either line transitions or loop transitions. */
     struct EdgeRender {
-        EdgeRender(Viewer* editor, Edge* transition): editor(editor), transition(transition) {}
+        EdgeRender(ViewerBase* editor, Edge* transition): editor(editor), transition(transition) {}
         virtual ~EdgeRender() = default;
 
-        virtual void draw(GCanvas* canvas, double thickness, const string& color) const = 0;
+        virtual void draw(GCanvas* canvas, double thickness, const std::string& color) const = 0;
         virtual bool contains(const GPoint& pt) const = 0;
 
-        Viewer* editor;
+        ViewerBase* editor;
         Edge* transition;
     };
 
     /* Linear transition. */
     struct LineEdge: EdgeRender {
-        LineEdge(Viewer* editor, Edge* transition, GPoint from, GPoint to) : EdgeRender(editor, transition), lineStart(from), lineEnd(to) {}
+        LineEdge(ViewerBase* editor, Edge* transition, GPoint from, GPoint to) : EdgeRender(editor, transition), lineStart(from), lineEnd(to) {}
 
         void draw(GCanvas* canvas, double thickness, const std::string& color) const override;
         bool contains(const GPoint& pt) const override;
@@ -70,9 +69,9 @@ namespace GraphEditor {
 
     /* Self-loop. */
     struct LoopEdge: EdgeRender {
-        LoopEdge(Viewer* editor, Edge* transition, const GPoint& center, const GPoint& arrowPt) : EdgeRender(editor, transition), center(center), arrowPt(arrowPt) {}
+        LoopEdge(ViewerBase* editor, Edge* transition, const GPoint& center, const GPoint& arrowPt) : EdgeRender(editor, transition), center(center), arrowPt(arrowPt) {}
 
-        void draw(GCanvas* canvas, double thickness, const string& color) const override;
+        void draw(GCanvas* canvas, double thickness, const std::string& color) const override;
         bool contains(const GPoint& pt) const override;
 
         /* Transition is represented by a circle. Where is the center of that
@@ -84,53 +83,9 @@ namespace GraphEditor {
         GPoint arrowPt;
     };
 
-    Viewer::Viewer(std::shared_ptr<Aux> aux) : mAux(aux) {
-        if (aux) aux->mViewer = this;
-    }
-
-    shared_ptr<Aux> Viewer::aux() {
-        return mAux;
-    }
-
-    Node* Viewer::newNode(const GPoint& pt) {
-        /* Get the ID for this state. */
-        size_t id = numNodes();
-        if (!freeNodeIDs.empty()) {
-            id = *freeNodeIDs.begin();
-            freeNodeIDs.erase(freeNodeIDs.begin());
-        }
-
-        auto result = newNodeNoAux(pt, id, "");
-
-        if (mAux) result->aux(mAux->newNode(result.get()));
-
-        return result.get();
-    }
-
-    shared_ptr<Node> Viewer::newNodeNoAux(const GPoint& pt, size_t index, const string& label) {
-        auto result = shared_ptr<Node>(new Node(this, pt, index, label));
-        result->renderer(defaultRendererFor(result.get()));
-        nodes.insert(result);
-        return result;
-    }
-
-    Edge* Viewer::newEdge(Node* from, Node* to, const string& label) {
-        auto edge = newEdgeNoAux(from, to, label);
-
-        if (mAux) edge->aux(mAux->newEdge(edge.get()));
-        return edge.get();
-    }
-
-    shared_ptr<Edge> Viewer::newEdgeNoAux(Node* from, Node* to, const string& label) {
-        auto edge = shared_ptr<Edge>(new Edge(this, from, to, label));
-        edges[from][to] = edge;
-        calculateEdgeEndpoints();
-        return edge;
-    }
-
-    void Viewer::draw(GCanvas* canvas,
-                      const unordered_map<Node*, NodeStyle>& stateStyles,
-                      const unordered_map<Edge*, EdgeStyle>& transitionStyles) {
+    void ViewerBase::draw(GCanvas* canvas,
+                      const std::unordered_map<Node*, NodeStyle>& stateStyles,
+                      const std::unordered_map<Edge*, EdgeStyle>& transitionStyles) {
         /* TODO: This is for testing purposes. Please remove this. */
         canvas->setColor("red");
         canvas->drawRect(baseX, baseY, width, height);
@@ -151,7 +106,7 @@ namespace GraphEditor {
         for (auto state: nodes) {
             auto style = stateStyles.count(state.get())? stateStyles.at(state.get()) : NodeStyle();
 
-            state->renderer()(this, canvas, style);
+            state->draw(this, canvas, style);
         }
     }
 
@@ -164,61 +119,33 @@ namespace GraphEditor {
         }
     }
 
-    Node* Viewer::nodeAt(GPoint pt) {
-        /* TODO: Do we need to do this in reverse so that we pick the
-         * topmost state?
-         */
-        for (auto node: nodes) {
-            if (isCloseTo(pt, node->position(), kNodeRadius)) {
-                return node.get();
-            }
-        }
-
-        return nullptr;
-    }
-
-    Edge* Viewer::edgeAt(GPoint pt) {
-        for (const auto& one: edges) {
-            for (const auto& two: one.second) {
-                /* Get the transition itself. */
-                auto edge = two.second;
-
-                if (edge->style->contains(pt)) {
-                    return edge.get();
-                }
-            }
-        }
-
-        return nullptr;
-    }
-
-    double Viewer::graphicsToWorld(double width) {
+    double ViewerBase::graphicsToWorld(double width) {
         return width / this->width;
     }
-    GPoint Viewer::graphicsToWorld(GPoint in) {
+    GPoint ViewerBase::graphicsToWorld(GPoint in) {
         return { (in.getX() - baseX) / width, (in.getY() - baseY) / width };
     }
-    GRectangle Viewer::graphicsToWorld(GRectangle in) {
+    GRectangle ViewerBase::graphicsToWorld(GRectangle in) {
         auto top = graphicsToWorld(GPoint{ in.getX(), in.getY() });
         auto bot = graphicsToWorld(GPoint{ in.getX() + in.getWidth(), in.getY() + in.getHeight() });
         return { top.getX(), top.getY(), bot.getX() - top.getX(), bot.getY() - top.getY() };
     }
 
-    double Viewer::worldToGraphics(double width) {
+    double ViewerBase::worldToGraphics(double width) {
         return width * this->width;
     }
-    GPoint Viewer::worldToGraphics(GPoint in) {
+    GPoint ViewerBase::worldToGraphics(GPoint in) {
         return { in.getX() * width + baseX, in.getY() * width + baseY };
     }
-    GRectangle Viewer::worldToGraphics(GRectangle in) {
+    GRectangle ViewerBase::worldToGraphics(GRectangle in) {
         auto top = worldToGraphics(GPoint{ in.getX(), in.getY() });
         auto bot = worldToGraphics(GPoint{ in.getX() + in.getWidth(), in.getY() + in.getHeight() });
         return { top.getX(), top.getY(), bot.getX() - top.getX(), bot.getY() - top.getY() };
     }
 
     /* All parameters are in world coordinates. */
-    void Viewer::drawArrow(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                           double thickness, const string& color) {
+    void ViewerBase::drawArrow(GCanvas* canvas, const GPoint& from, const GPoint& to,
+                               double thickness, const std::string& color) {
         GLine line(worldToGraphics(from), worldToGraphics(to));
         line.setLineWidth(ceil(thickness * width));
         line.setColor(color);
@@ -228,8 +155,8 @@ namespace GraphEditor {
         drawArrowhead(canvas, from, to, thickness, color);
     }
 
-    void Viewer::drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                               double thickness, const string& color) {
+    void ViewerBase::drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
+                                   double thickness, const std::string& color) {
         /* Draw the arrowheads. First, get a vector pointing from end to start so that
          * we can shift it around to compute the endpoints.
          */
@@ -248,7 +175,7 @@ namespace GraphEditor {
         canvas->draw(&line);
     }
 
-        namespace {
+    namespace {
         /* Given a quadratic equation, returns whether there are any solutions that
          * correspond to a line/circle intersection. This happens if solutions exist
          * UNLESS both intersections are less than zero or both intersections are
@@ -266,7 +193,7 @@ namespace GraphEditor {
 
         /* Counts collisions a circle and a collection of lines. */
         size_t collisionsBetween(const GPoint& center, double radius,
-                                 const vector<pair<GPoint, GPoint>>& lines) {
+                                 const std::vector<std::pair<GPoint, GPoint>>& lines) {
             /* Any point (x, y) on a circle satisfies
              *
              *    (x - x_c)^2 + (y - y_c)^2 = r^2.
@@ -307,7 +234,7 @@ namespace GraphEditor {
         }
 
         size_t collisionsBetween(const GPoint&, double,
-                                 const vector<pair<GPoint, double>>&) {
+                                 const std::vector<std::pair<GPoint, double>>&) {
             /* TODO: Implement this function to count circle/circle collisions. */
             return 0;
         }
@@ -317,8 +244,8 @@ namespace GraphEditor {
          * number of collision points overall.
          */
         size_t collisionsBetween(const GPoint& center, double radius,
-                                 const vector<pair<GPoint, GPoint>>& lines,
-                                 const vector<pair<GPoint, double>>& circles) {
+                                 const std::vector<std::pair<GPoint, GPoint>>& lines,
+                                 const std::vector<std::pair<GPoint, double>>& circles) {
             return collisionsBetween(center, radius, lines) +
                    collisionsBetween(center, radius, circles);
         }
@@ -326,8 +253,8 @@ namespace GraphEditor {
         /* Determines the best angle at which to orient a self-loop, which is one that
          * hits the fewest other objects.
          */
-        double bestThetaFor(const GPoint& stateCenter, const vector<pair<GPoint, GPoint>>& lines,
-                            const vector<pair<GPoint, double>>& circles) {
+        double bestThetaFor(const GPoint& stateCenter, const std::vector<std::pair<GPoint, GPoint>>& lines,
+                            const std::vector<std::pair<GPoint, double>>& circles) {
             /* Our algorithm for placing the circle goes as follows. We iterate over a fixed
              * number of potential angles that we can use. For each one, we count the number
              * of collisions that would result if we put the circle there, forming an array
@@ -341,7 +268,7 @@ namespace GraphEditor {
              * TODO: It would be a LOT more elegant to do this by using some sort of nice
              * and pretty math instead of trial and error. Can you improve upon this?
              */
-            vector<size_t> collisions;
+            std::vector<std::size_t> collisions;
             for (int degAngle = kLowAngle; degAngle < kHighAngle; degAngle += kAngleStep) {
                 double theta = degAngle * M_PI / 180;
                 GPoint center = stateCenter + unitToward(theta) * kNodeRadius;
@@ -437,7 +364,7 @@ namespace GraphEditor {
         }
 
         /* Boundaries of the world, represented as lines. */
-        vector<pair<GPoint, GPoint>> worldBoundaries(double aspectRatio) {
+        std::vector<std::pair<GPoint, GPoint>> worldBoundaries(double aspectRatio) {
             const double lft = 0;
             const double rgt = 1;
             const double top = 0;
@@ -455,9 +382,9 @@ namespace GraphEditor {
     /* Determines where each transition should start and end. There are dependencies
      * across these transitions, so we need to do this all at once.
      */
-    void Viewer::calculateEdgeEndpoints() {
+    void ViewerBase::calculateEdgeEndpoints() {
         /* List of all line segments used. */
-        vector<pair<GPoint, GPoint>> lines = worldBoundaries(mAspectRatio);
+        std::vector<std::pair<GPoint, GPoint>> lines = worldBoundaries(mAspectRatio);
 
         /* First, handle linear transitions. */
         forEachEdge([&](Edge* transition) {
@@ -486,15 +413,15 @@ namespace GraphEditor {
                     p1 += normalizationOf(p0 - p1) * kNodeRadius;
                 }
 
-                transition->style = make_shared<LineEdge>(this, transition, p0, p1);
-                lines.push_back(make_pair(p0, p1));
+                transition->style = std::make_shared<LineEdge>(this, transition, p0, p1);
+                lines.push_back(std::make_pair(p0, p1));
             }
         });
 
         /* All placed circles. Initially, that's all the states. */
-        vector<pair<GPoint, double>> circles;
+        std::vector<std::pair<GPoint, double>> circles;
         for (auto state: nodes) {
-            circles.push_back(make_pair(state->position(), kNodeRadius));
+            circles.push_back(std::make_pair(state->position(), kNodeRadius));
         }
 
         /* Now, place all self-loops. */
@@ -505,8 +432,8 @@ namespace GraphEditor {
                 GPoint center  = transition->from()->position() + unitToward(theta) * kNodeRadius;
                 GPoint arrowPt = loopArrowPointFor(transition->from()->position(), center);
 
-                transition->style = make_shared<LoopEdge>(this, transition, center, arrowPt);
-                circles.push_back(make_pair(center, kNodeRadius));
+                transition->style = std::make_shared<LoopEdge>(this, transition, center, arrowPt);
+                circles.push_back(std::make_pair(center, kNodeRadius));
             }
         });
     }
@@ -561,9 +488,12 @@ namespace GraphEditor {
             return ch >= 0 && ch <= 127 && isspace(ch);
         }
 
-        /* Given a string, replaces all the spaces in the string with nonbreaking spaces. */
-        string toNonbreakingSpaces(const string& input) {
-            string result;
+        /* Given a string, replaces all the spaces in the string with nonbreaking spaces.
+         *
+         * TODO: Remove this and replace with LineBreak::NO_BREAK_SPACES.
+         */
+        std::string toNonbreakingSpaces(const std::string& input) {
+            std::string result;
             for (char32_t ch: utf8Reader(input)) {
                 if (isSpace(ch)) {
                     result += kNonbreakingSpace;
@@ -576,14 +506,14 @@ namespace GraphEditor {
         }
     }
 
-    void Viewer::drawTransitionLabel(GCanvas* canvas,
-                                     const GPoint& p0, const GPoint& p1,
-                                     const string& labelText,
-                                     bool hugLine) {
+    void ViewerBase::drawTransitionLabel(GCanvas* canvas,
+                                         const GPoint& p0, const GPoint& p1,
+                                         const std::string& labelText,
+                                         bool hugLine) {
         GPoint from = worldToGraphics(p0);
         GPoint to   = worldToGraphics(p1);
 
-        string label = toNonbreakingSpaces(labelText);
+        std::string label = toNonbreakingSpaces(labelText);
 
         /* Determine the length of this line. */
         double length = magnitudeOf(to - from);
@@ -591,7 +521,7 @@ namespace GraphEditor {
         /* Determine what font we should use for the label by computing a text render
          * and extracting the font it uses.
          */
-        string font = TextRender::construct(label, {0, 0, length, width * kTransitionTextHeight }, kTransitionFontColor, kEdgeFont)->computedFont();
+        std::string font = TextRender::construct(label, {0, 0, length, width * kTransitionTextHeight }, kTransitionFontColor, kEdgeFont)->computedFont();
 
         /* Create a graphics object for the label. */
         GText text(label);
@@ -607,7 +537,7 @@ namespace GraphEditor {
              * of the endpoints.
              */
             theta += M_PI;
-            swap(to, from);
+            std::swap(to, from);
 
             /* If we are supposed to hug the line, we need to do an extra step and shift the
              * line position over so that when we draw on top of it, we appear to have just
@@ -655,7 +585,35 @@ namespace GraphEditor {
         canvas->draw(&text);
     }
 
-    void LineEdge::draw(GCanvas* canvas, double thickness, const string& color) const {
+    Node* ViewerBase::nodeAt(const GPoint& pt) {
+        /* TODO: Do we need to do this in reverse so that we pick the
+         * topmost state?
+         */
+        for (auto node: nodes) {
+            if (isCloseTo(pt, node->position(), kNodeRadius)) {
+                return node.get();
+            }
+        }
+
+        return nullptr;
+    }
+
+    Edge* ViewerBase::edgeAt(const GPoint& pt) {
+        for (const auto& one: edges) {
+            for (const auto& two: one.second) {
+                /* Get the transition itself. */
+                auto edge = two.second;
+
+                if (edge->style->contains(pt)) {
+                    return edge.get();
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    void LineEdge::draw(GCanvas* canvas, double thickness, const std::string& color) const {
         editor->drawArrow(canvas, lineStart, lineEnd, thickness, color);
         editor->drawTransitionLabel(canvas, lineStart, lineEnd, transition->label(), false);
     }
@@ -667,7 +625,7 @@ namespace GraphEditor {
         return fabs(magnitudeOf(pt - center) - kLoopTransitionRadius) < kEdgeTolerance;
     }
 
-    void LoopEdge::draw(GCanvas* canvas, double width, const string& color) const {
+    void LoopEdge::draw(GCanvas* canvas, double width, const std::string& color) const {
         double size = 2 * editor->width * kLoopTransitionRadius;
         GPoint pt = editor->worldToGraphics(center);
 
@@ -704,13 +662,13 @@ namespace GraphEditor {
         editor->drawTransitionLabel(canvas, p0, p1, transition->label(), true);
     }
 
-    void Viewer::forEachNode(function<void (Node *)> callback) {
+    void ViewerBase::forEachNode(std::function<void (Node *)> callback) {
         for (const auto& state: nodes) {
             callback(state.get());
         }
     }
 
-    void Viewer::forEachEdge(function<void (Edge *)> callback) {
+    void ViewerBase::forEachEdge(std::function<void (Edge *)> callback) {
         for (const auto& e1: edges) {
             for (const auto& e2: e1.second) {
                 callback(e2.second.get());
@@ -718,61 +676,36 @@ namespace GraphEditor {
         }
     }
 
-    bool Viewer::hasEdge(Node* from, Node* to) {
+    bool ViewerBase::hasEdge(Node* from, Node* to) {
         return edges.count(from) && edges[from].count(to);
     }
 
-    void Viewer::removeNode(Node* node) {
-        auto itr = find_if(nodes.begin(), nodes.end(), [&](shared_ptr<Node> n) {
-                   return n.get() == node;
-        });
-        if (itr == nodes.end()) return;
-
-        nodes.erase(itr);
-
-        /* Remove transitions from the state. */
-        edges.erase(node);
-
-        /* Remove transitions to the state. */
-        for (auto& e1: edges) {
-            auto itr = e1.second.begin();
-            while (itr != e1.second.end()) {
-                if (itr->first == node) {
-                    itr = e1.second.erase(itr);
-                } else {
-                    ++itr;
-                }
-            }
-        }
-
-        freeNodeIDs.insert(node->index());
-
-        calculateEdgeEndpoints();
-    }
-
-    void Viewer::removeEdge(Edge* transition) {
-        edges[transition->from()].erase(transition->to());
-        calculateEdgeEndpoints();
-    }
-
-    GRectangle Viewer::bounds() const {
-        return rawBounds;
-    }
-
-    GRectangle Viewer::computedBounds() const {
-        return { baseX, baseY, width, height };
-    }
-
-    Edge* Viewer::edgeBetween(Node* from, Node* to) {
+    Edge* ViewerBase::edgeBetween(Node* from, Node* to) {
         if (!edges.count(from) || !edges.at(from).count(to)) return nullptr;
         return edges.at(from).at(to).get();
     }
 
-    size_t Viewer::numNodes() {
+    Node* ViewerBase::nodeLabeled(const std::string& label) {
+        for (auto node: nodes) {
+            if (node->label() == label) return node.get();
+        }
+
+        return nullptr;
+    }
+
+    GRectangle ViewerBase::bounds() const {
+        return rawBounds;
+    }
+
+    GRectangle ViewerBase::computedBounds() const {
+        return { baseX, baseY, width, height };
+    }
+
+    size_t ViewerBase::numNodes() {
         return nodes.size();
     }
 
-    void Viewer::setBounds(const GRectangle& bounds) {
+    void ViewerBase::setBounds(const GRectangle& bounds) {
         rawBounds = bounds;
 
         /* Too narrow? */
@@ -788,24 +721,29 @@ namespace GraphEditor {
         baseY = bounds.getY() + (bounds.getHeight() - height) / 2.0;
     }
 
-    double Viewer::aspectRatio() {
+    double ViewerBase::aspectRatio() {
         return mAspectRatio;
     }
 
-    void Viewer::aspectRatio(double ratio) {
+    void ViewerBase::aspectRatio(double ratio) {
         mAspectRatio = ratio;
         setBounds(rawBounds); // Recalculate to the last provided rectangle.
     }
 
-    Node::Node(Viewer* editor, const GPoint& pt, std::size_t id, const std::string& label)
-        : owner(editor), mPos(pt), mIndex(id), mLabel(label) {
+    Node::Node(ViewerBase* editor, const NodeArgs& args, JSON)
+        : Node(editor, args) {
+        // Forwarded!
+    }
+
+    Node::Node(ViewerBase* editor, const NodeArgs& args)
+        : owner(editor), mPos(args.pt), mIndex(args.index), mLabel(args.label) {
         owner->calculateEdgeEndpoints();
     }
 
-    const string& Node::label() {
+    const std::string& Node::label() {
         return mLabel;
     }
-    void Node::label(const string& label) {
+    void Node::label(const std::string& label) {
         mLabel = label;
     }
 
@@ -831,56 +769,33 @@ namespace GraphEditor {
         owner->calculateEdgeEndpoints();
     }
 
-    NodeRenderer Node::renderer() {
-        return mRenderer;
+    void Node::draw(ViewerBase* editor, GCanvas* canvas, const NodeStyle& style) {
+        /* Calculate the size of the state. */
+        double size = 2.0 * style.radius;
+        auto bounds = editor->worldToGraphics({ position().getX() - size / 2.0, position().getY() - size / 2.0, size, size });
+
+        GOval mainState(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
+
+        mainState.setFilled(true);
+        mainState.setFillColor(style.fillColor);
+        mainState.setLineWidth(ceil(editor->worldToGraphics(style.lineWidth)));
+        mainState.setColor(style.borderColor);
+        canvas->draw(&mainState);
+
+        /* Draw the state name. */
+        auto render = TextRender::construct(label(), bounds, kStateFontColor, kNodeFont);
+        render->alignCenterVertically();
+        render->alignCenterHorizontally();
+        render->draw(canvas);
     }
 
-    void Node::renderer(NodeRenderer renderer) {
-        mRenderer = renderer;
+    Edge::Edge(ViewerBase* owner, const EdgeArgs& args, JSON)
+        : Edge(owner, args) {
+        // Forwarded
     }
 
-    shared_ptr<void> Node::aux() {
-        return mAux;
-    }
-
-    void Node::aux(shared_ptr<void> aux) {
-        mAux = aux;
-    }
-
-    Node* Viewer::nodeLabeled(const string& label) {
-        for (auto state: nodes) {
-            if (state->label() == label) return state.get();
-        }
-
-        return nullptr;
-    }
-
-    NodeRenderer defaultRendererFor(Node* node, bool drawLabel) {
-        return [=](Viewer* editor, GCanvas* canvas, const NodeStyle& style) {
-            /* Calculate the size of the state. */
-            double size = 2.0 * style.radius;
-            auto bounds = editor->worldToGraphics({ node->position().getX() - size / 2.0, node->position().getY() - size / 2.0, size, size });
-
-            GOval mainState(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
-
-            mainState.setFilled(true);
-            mainState.setFillColor(style.fillColor);
-            mainState.setLineWidth(ceil(editor->worldToGraphics(style.lineWidth)));
-            mainState.setColor(style.borderColor);
-            canvas->draw(&mainState);
-
-            if (drawLabel) {
-                /* Draw the state name. */
-                auto render = TextRender::construct(node->label(), bounds, kStateFontColor, kNodeFont);
-                render->alignCenterVertically();
-                render->alignCenterHorizontally();
-                render->draw(canvas);
-            }
-        };
-    }
-
-    Edge::Edge(Viewer* owner, Node* from, Node* to, const std::string& label)
-        : mOwner(owner), mFrom(from), mTo(to), mLabel(label) {
+    Edge::Edge(ViewerBase* owner, const EdgeArgs& args)
+        : mOwner(owner), mFrom(args.from), mTo(args.to), mLabel(args.label) {
         owner->calculateEdgeEndpoints();
     }
 
@@ -892,25 +807,12 @@ namespace GraphEditor {
         return mFrom;
     }
 
-    string Edge::label() {
+    std::string Edge::label() {
         return mLabel;
     }
 
-    void Edge::label(const string& label) {
+    void Edge::label(const std::string& label) {
         mLabel = label;
-    }
-
-    shared_ptr<void> Edge::aux() {
-        return mAux;
-    }
-
-    void Edge::aux(shared_ptr<void> aux) {
-        mAux = aux;
-    }
-
-    /*** Aux functions ***/
-    Viewer* Aux::viewer() {
-        return mViewer;
     }
 
     /*** Serialization / Deserialization ***/
@@ -930,125 +832,61 @@ namespace GraphEditor {
      *   { "from": <index>, "to": <index>, "label": <label> }
      */
 
-    JSON Viewer::nodesToJSON() {
-        vector<JSON> result;
+    JSON ViewerBase::nodesToJSON() {
+        std::vector<JSON> result;
         for (auto node: nodes) {
             result.push_back(toJSON(node.get()));
         }
         return result;
     }
 
-    JSON Viewer::toJSON(Node* node) {
+    JSON ViewerBase::toJSON(Node* node) {
         return JSON::object({
             { "index", node->index() },
             { "label", node->label() },
             { "pos",   JSON::array(node->position().getX(), node->position().getY()) },
-            { "aux",   mAux? mAux->writeNodeAux(node->aux()) : nullptr }
+            { "aux",   node->toJSON() }
         });
     }
 
-    JSON Viewer::edgesToJSON() {
-        vector<JSON> result;
+    JSON ViewerBase::edgesToJSON() {
+        std::vector<JSON> result;
         forEachEdge([&](Edge* edge) {
             result.push_back(toJSON(edge));
         });
         return result;
     }
 
-    JSON Viewer::auxToJSON() {
-        return mAux? mAux->writeAux() : nullptr;
+    /* Default aux data is nothing at all. */
+    JSON ViewerBase::auxData() {
+        return nullptr;
     }
 
-    JSON Viewer::toJSON(Edge* edge) {
+    JSON ViewerBase::toJSON(Edge* edge) {
         return JSON::object({
-            { "from",  edge->from()->index()                         },
-            { "to",    edge->to()->index()                           },
-            { "label", edge->label()                                 },
-            { "aux",   mAux? mAux->writeEdgeAux(edge->aux()) : nullptr }
+            { "from",  edge->from()->index() },
+            { "to",    edge->to()->index()   },
+            { "label", edge->label()         },
+            { "aux",   edge->toJSON()        }
         });
     }
 
     /* Serializes to JSON. */
-    JSON Viewer::toJSON() {
+    JSON ViewerBase::toJSON() {
         /* Pair that with the serialized NFA. */
         return JSON::object({
             { "nodes", nodesToJSON() },
             { "edges", edgesToJSON() },
-            { "aux",   auxToJSON()   }
+            { "aux",   auxData()     }
         });
     }
 
-    /* Deserialize. */
-    Viewer::Viewer(istream& in, std::shared_ptr<Aux> aux) : Viewer(aux) {
-        JSON j = JSON::parse(in);
 
-        /* Read aux data, if any. */
-        if (aux) aux->readAux(j["aux"]);
-
-        /* Decompress nodes. */
-        size_t maxIndex = 0;
-        map<size_t, Node*> byIndex;
-        for (JSON jNode: j["nodes"]) {
-            size_t index = jNode["index"].asInteger();
-            string label = jNode["label"].asString();
-            GPoint pos   = { jNode["pos"][0].asDouble(), jNode["pos"][1].asDouble() };
-
-            auto node = newNodeNoAux(pos, index, label);
-            if (aux) node->aux(aux->readNodeAux(node.get(), jNode["aux"]));
-
-            byIndex[node->index()] = node.get();
-
-            maxIndex = max(maxIndex, index);
-        }
-
-        /* Loop over nodes again, filling in missing node IDs. */
-        for (size_t i = 0; i < maxIndex; i++) {
-            freeNodeIDs.insert(i);
-        }
-        for (auto node: nodes) {
-            freeNodeIDs.erase(node->index());
-        }
-
-        /* Decompress edges. */
-        for (JSON jEdge: j["edges"]) {
-            size_t from  = jEdge["from"].asInteger();
-            size_t to    = jEdge["to"].asInteger();
-            string label = jEdge["label"].asString();
-            auto edge = newEdgeNoAux(byIndex.at(from), byIndex.at(to), label);
-            if (aux) edge->aux(aux->readEdgeAux(edge.get(), jEdge["aux"]));
-        }
-    }
-
-    /* Aux defaults. */
-    shared_ptr<void> Aux::newNode(Node*) {
+    /* Default serializers. */
+    JSON Node::toJSON() {
         return nullptr;
     }
-
-    shared_ptr<void> Aux::newEdge(Edge*) {
-        return nullptr;
-    }
-
-    shared_ptr<void> Aux::readNodeAux(Node*, JSON) {
-        return nullptr;
-    }
-
-    shared_ptr<void> Aux::readEdgeAux(Edge*, JSON) {
-        return nullptr;
-    }
-
-    JSON Aux::writeNodeAux(shared_ptr<void>) {
-        return nullptr;
-    }
-
-    JSON Aux::writeEdgeAux(shared_ptr<void>) {
-        return nullptr;
-    }
-
-    void Aux::readAux(JSON) {
-
-    }
-
-    JSON Aux::writeAux() {
+    JSON Edge::toJSON() {
         return nullptr;
     }
 }

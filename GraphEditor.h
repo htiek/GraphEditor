@@ -14,14 +14,11 @@ namespace GraphEditor {
         virtual void entityHovered(Entity* entity);
     };
 
-    /* Interface to a Viewer that's specifically designed for interactively editing
-     * the underlying graph structure.
+    /* Base type for all editors. You should not use this type directly; it's for
+     * internal purposes only.
      */
-    class Editor {
+    class EditorBase {
     public:
-        /* Builds an editor that hooks into the specified Viewer. */
-        Editor(std::shared_ptr<Viewer> viewer);
-
         /* Handles these mouse events to support dragging, adding new lines,
          * etc. Forward these messages to have the editor handle dragging,
          * creation of new items, etc.
@@ -41,15 +38,16 @@ namespace GraphEditor {
          */
         void draw(GCanvas* canvas);
 
-        /* Deletes the given node/edge. */
-        void deleteNode(Node* node);
-        void deleteEdge(Edge* edge);
-
-        /* Retrieve the underlying editor. */
-        std::shared_ptr<Viewer> viewer();
+    protected:
+        /* Firewalled off from the base. We promise the types will work. */
+        virtual Node* newNode(const GPoint& pt) = 0;
+        virtual Edge* newEdge(Node* from, Node* to) = 0;
+        virtual Edge* edgeBetween(Node* from, Node* to) = 0;
 
     private:
-        std::shared_ptr<Viewer> mViewer;
+        EditorBase(std::shared_ptr<ViewerBase>);
+        std::shared_ptr<ViewerBase> mViewer;
+
         std::vector<std::shared_ptr<Listener>> mListeners;
 
         /* Active/hovered items. */
@@ -94,5 +92,86 @@ namespace GraphEditor {
 
         void dirty();
         void requestRepaint();
+
+        template <typename Viewer> friend class Editor;
     };
+
+    /* Interface to a Viewer that's specifically designed for interactively editing
+     * the underlying graph structure. It's parameterized on the type of the
+     * underlying viewer
+     */
+    template <typename Viewer = GraphEditor::Viewer<>> class Editor: public EditorBase {
+    public:
+        using NodeType = typename Viewer::NodeType;
+        using EdgeType = typename Viewer::EdgeType;
+
+        /* Builds an editor that hooks into the specified Viewer. */
+        Editor(std::shared_ptr<Viewer> viewer);
+
+        /* Deletes the given node/edge. */
+        void deleteNode(NodeType* node);
+        void deleteEdge(EdgeType* edge);
+
+        /* Retrieve the underlying editor. */
+        std::shared_ptr<Viewer> viewer();
+
+    protected:
+        virtual Node* newNode(const GPoint& pt) override;
+        virtual Edge* newEdge(Node* from, Node* to) override;
+        virtual Edge* edgeBetween(Node* from, Node* to) override;
+
+    private:
+        std::shared_ptr<Viewer> mViewer;
+    };
+
+    template <typename Viewer>
+    Editor<Viewer>::Editor(std::shared_ptr<Viewer> viewer) : EditorBase(viewer), mViewer(viewer) {
+        // Handled above
+    }
+
+    template <typename Viewer>
+    std::shared_ptr<Viewer> Editor<Viewer>::viewer() {
+        return mViewer;
+    }
+
+    template <typename Viewer>
+    void Editor<Viewer>::deleteNode(NodeType* node) {
+        /* Remove the state. */
+        mViewer->removeNode(node);
+
+        /* If this was the active node, deselect it. */
+        if (node == activeNode) setActive(nullptr);
+        if (node == hoverNode)  setHover(nullptr);
+
+        /* Deselect the active transition; it may no longer be valid! */
+        if (activeEdge) setActive(nullptr);
+        if (hoverEdge)  setHover(nullptr);
+
+        dirty();
+    }
+
+    template <typename Viewer>
+    void Editor<Viewer>::deleteEdge(EdgeType* edge) {
+        /* Remove from the list of transitions. */
+        mViewer->removeEdge(edge);
+
+        if (activeEdge == edge) setActive(nullptr);
+        if (hoverEdge  == edge) setHover(nullptr);
+        dirty();
+    }
+
+    template <typename Viewer>
+    Node* Editor<Viewer>::newNode(const GPoint& pt) {
+        return mViewer->newNode(pt);
+    }
+
+    template <typename Viewer>
+    Edge* Editor<Viewer>::newEdge(Node* src, Node* dst) {
+        return mViewer->newEdge(static_cast<NodeType*>(src), static_cast<NodeType*>(dst));
+    }
+
+    template <typename Viewer>
+    Edge* Editor<Viewer>::edgeBetween(Node* src, Node* dst) {
+        return mViewer->edgeBetween(static_cast<NodeType*>(src), static_cast<NodeType*>(dst));
+    }
 }
