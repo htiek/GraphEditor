@@ -12,6 +12,7 @@ namespace GraphEditor {
         virtual void isDirty();
         virtual void entitySelected(Entity* entity);
         virtual void entityHovered(Entity* entity);
+        virtual void entityCreated(Entity* entity);
     };
 
     /* Base type for all editors. You should not use this type directly; it's for
@@ -37,12 +38,6 @@ namespace GraphEditor {
          * everything.
          */
         void draw(GCanvas* canvas);
-
-    protected:
-        /* Firewalled off from the base. We promise the types will work. */
-        virtual Node* newNode(const GPoint& pt) = 0;
-        virtual Edge* newEdge(Node* from, Node* to) = 0;
-        virtual Edge* edgeBetween(Node* from, Node* to) = 0;
 
     private:
         EditorBase(std::shared_ptr<ViewerBase>);
@@ -90,8 +85,16 @@ namespace GraphEditor {
         void setHoverNode(GraphEditor::Node* state);
         void setHoverEdge(GraphEditor::Edge* transition);
 
+        Node* selectedNode();
+        Edge* selectedEdge();
+
         void dirty();
         void requestRepaint();
+
+        /* Firewalled off from the base. We promise the types will work. */
+        virtual Node* newNode(const GPoint& pt) = 0;
+        virtual Edge* newEdge(Node* from, Node* to) = 0;
+        virtual Edge* edgeBetween(Node* from, Node* to) = 0;
 
         template <typename Viewer> friend class Editor;
     };
@@ -107,6 +110,10 @@ namespace GraphEditor {
 
         /* Builds an editor that hooks into the specified Viewer. */
         Editor(std::shared_ptr<Viewer> viewer);
+
+        /* Which node or edge, if any, is selected? */
+        NodeType* selectedNode();
+        EdgeType* selectedEdge();
 
         /* Deletes the given node/edge. */
         void deleteNode(NodeType* node);
@@ -173,5 +180,15 @@ namespace GraphEditor {
     template <typename Viewer>
     Edge* Editor<Viewer>::edgeBetween(Node* src, Node* dst) {
         return mViewer->edgeBetween(static_cast<NodeType*>(src), static_cast<NodeType*>(dst));
+    }
+
+    template <typename Viewer>
+    typename Editor<Viewer>::NodeType* Editor<Viewer>::selectedNode() {
+        return static_cast<NodeType*>(EditorBase::selectedNode());
+    }
+
+    template <typename Viewer>
+    typename Editor<Viewer>::EdgeType* Editor<Viewer>::selectedEdge() {
+        return static_cast<EdgeType*>(EditorBase::selectedEdge());
     }
 }

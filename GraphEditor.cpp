@@ -100,10 +100,13 @@ namespace GraphEditor {
         if (mViewer->nodeAt(pos)) return;
         if (mViewer->edgeAt(pos)) return;
 
-        auto state = newNode(pos);
+        auto node = newNode(pos);
+        for (auto listener: mListeners) {
+            listener->entityCreated(node);
+        }
 
-        setHover(state);
-        setActive(state);
+        setHover(node);
+        setActive(node);
         requestRepaint();
         dirty();
     }
@@ -234,6 +237,9 @@ namespace GraphEditor {
         auto* edge = edgeBetween(edgeStart, end);
         if (!edge) {
             edge = newEdge(edgeStart, end);
+            for (auto listener: mListeners) {
+                listener->entityCreated(edge);
+            }
             dirty();
         }
 
@@ -295,6 +301,13 @@ namespace GraphEditor {
         mListeners.push_back(listener);
     }
 
+    Node* EditorBase::selectedNode() {
+        return activeNode;
+    }
+
+    Edge* EditorBase::selectedEdge() {
+        return activeEdge;
+    }
 
     /**** Default listener interface. ****/
     void Listener::isDirty() {
@@ -310,6 +323,10 @@ namespace GraphEditor {
     }
 
     void Listener::entitySelected(Entity *) {
+        // Do nothing
+    }
+
+    void Listener::entityCreated(Entity *) {
         // Do nothing
     }
 }
