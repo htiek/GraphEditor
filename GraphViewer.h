@@ -184,6 +184,8 @@ namespace GraphEditor {
      */
     class ViewerBase {
     public:
+        virtual ~ViewerBase() = default;
+
         /* Aspect ratio. */
         double aspectRatio();
         void aspectRatio(double ratio);
