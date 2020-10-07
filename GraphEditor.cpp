@@ -141,6 +141,12 @@ namespace GraphEditor {
 
         /* Did we hit a state? */
         if (auto over = mViewer->nodeAt(pt)) {
+            /* Forcibly set this to be the overed item as well. This prevents
+             * us from crashing or getting into an inconsistent state in the
+             * event that the mousePressed event happened without an intervening
+             * mouseMoved event.
+             */
+            setHover(over);
             setActive(over);
 
             /* Compute the distance to the center of the state. */

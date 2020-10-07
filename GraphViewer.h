@@ -138,6 +138,10 @@ namespace GraphEditor {
         template <typename N, typename T> friend class Viewer;
     };
 
+    /* Graph edges. In the directed (default) case, the meanings of "from" and "to"
+     * are well-specified. In the undirected case, the meanings of "from" and "to" should
+     * be thought of instead as "one endpoint" and "another endpoint."
+     */
     class Edge: public Entity {
     public:
         virtual ~Edge() = default;
@@ -178,6 +182,12 @@ namespace GraphEditor {
         template <typename N, typename T> friend class Viewer;
     };
 
+    /* Graph types. Default is directed. */
+    enum class Type {
+        DIRECTED,
+        UNDIRECTED
+    };
+
     /* Base type containing the logic to draw a graph. You will likely not
      * need to make use of this type directly; instead, use the parameterized
      * Viewer type.
@@ -193,6 +203,9 @@ namespace GraphEditor {
         /* Serializes the viewer to a JSON object. */
         JSON toJSON();
 
+        /* Sets the bounding box where the viewer should draw the graph.
+         * Default is the empty rectangle.
+         */
         void setBounds(const GRectangle& bounds);
 
         /* Default graphics parameters will be used everywhere, except for the
@@ -207,6 +220,23 @@ namespace GraphEditor {
 
         /* Rectangle computed to contain all the content. */
         GRectangle computedBounds() const;
+
+        /* Sets the graph type.
+         *
+         * If you change from an undirected graph to a directed graph,
+         * the existing edges will be Arbitrarily and Capriciously
+         * assigned a direction.
+         *
+         * If you change from a directed graph to an undirected graph,
+         * all self-loops will be removed and all pairs of edges pointing
+         * each way will have one edge Arbitrarily and Capriciously
+         * assigned a direction.
+         *
+         * As a result, we recommend that you set the type before you
+         * add or remove any edges.
+         */
+        Type type() const;
+        void type(Type type);
 
         /* Coordinate changes. */
         double     graphicsToWorld(double width);
@@ -223,14 +253,6 @@ namespace GraphEditor {
                        double thickness, const std::string& color);
 
         std::size_t numNodes();
-
-        /* TODO: Hide all five of these; they're overridden in the derived type. */
-        bool hasEdge(Node* from, Node* to);
-        void forEachNode(std::function<void(Node*)>);
-        void forEachEdge(std::function<void(Edge*)>);
-        Node* nodeAt(const GPoint& pt);
-        Edge* edgeAt(const GPoint& pt);
-
     protected:
         virtual JSON auxData();
 
@@ -247,7 +269,11 @@ namespace GraphEditor {
         /* List of all nodes / edges. */
         std::set<std::shared_ptr<Node>> nodes;
 
-        /* Transitions, encoded as node -> node -> edge info. */
+        /* Transitions, encoded as node -> node -> edge info.
+         *
+         * INVARIANT: If the graph is undirected, edges always flow from LOWER-index
+         * nodes to HIGHER-index nodes. This gives consistency across saves and loads.
+         */
         std::unordered_map<Node*, std::unordered_map<Node*, std::shared_ptr<Edge>>> edges;
 
         /* Available numbers for states; if empty, use size of states
@@ -255,8 +281,12 @@ namespace GraphEditor {
          */
         std::set<int> freeNodeIDs;
 
+        /* Graph type. */
+        Type mType = Type::DIRECTED;
+
         JSON nodesToJSON();
         JSON edgesToJSON();
+        JSON typeToJSON();
 
         JSON toJSON(Node* node);
         JSON toJSON(Edge* edge);
@@ -270,10 +300,18 @@ namespace GraphEditor {
         void drawTransitionLabel(GCanvas* canvas, const GPoint& p0, const GPoint& p1,
                                  const std::string& label, bool hugLine);
         void drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                           double thickness, const std::string& color);        
+                           double thickness, const std::string& color);
 
         /* Recalculates the renderer for each transition. */
         void calculateEdgeEndpoints();
+
+        /* Used by subtypes. */
+        bool hasEdge(Node* from, Node* to);
+        void forEachNode(std::function<void(Node*)>);
+        void forEachEdge(std::function<void(Edge*)>);
+        Node* nodeAt(const GPoint& pt);
+        Edge* edgeAt(const GPoint& pt);
+        void removeEdge(Edge* edge);
 
         friend struct LineEdge;
         friend struct LoopEdge;
@@ -282,6 +320,9 @@ namespace GraphEditor {
 
         template <typename NodeType, typename EdgeType>
         friend class Viewer;
+
+        friend class EditorBase;
+        template <typename Viewer> friend class Editor;
     };
 
     /* Viewer / editor for an underlying graph. This is parameterized on the types
@@ -386,6 +427,14 @@ namespace GraphEditor {
 
     template <typename NodeType, typename EdgeType>
     std::shared_ptr<EdgeType> Viewer<NodeType, EdgeType>::newEdge(NodeType* from, NodeType* to, const std::string& label, JSON aux) {
+        /* No-op if the graph is undirected and the endpoints are the same. */
+        if (type() == Type::UNDIRECTED && from == to) return nullptr;
+
+        /* Canonize order if need be. */
+        if (type() == Type::UNDIRECTED && from->index() >= to->index()) {
+            std::swap(from, to);
+        }
+
         auto edge = std::shared_ptr<EdgeType>(new EdgeType(this, EdgeArgs{from, to, label}, aux));
         edges[from][to] = edge;
         calculateEdgeEndpoints();
@@ -432,9 +481,8 @@ namespace GraphEditor {
     }
 
     template <typename NodeType, typename EdgeType>
-    void Viewer<NodeType, EdgeType>::removeEdge(EdgeType* transition) {
-        edges[transition->from()].erase(transition->to());
-        calculateEdgeEndpoints();
+    void Viewer<NodeType, EdgeType>::removeEdge(EdgeType* edge) {
+        ViewerBase::removeEdge(edge);
     }
 
     template <typename NodeType, typename EdgeType>
@@ -479,9 +527,20 @@ namespace GraphEditor {
             std::size_t to    = jEdge["to"].asInteger();
             std::string label = jEdge["label"].asString();
             auto edge         = newEdge(static_cast<NodeType*>(byIndex.at(from)),
-                                             static_cast<NodeType*>(byIndex.at(to)),
-                                             label,
-                                             jEdge["aux"]);
+                                        static_cast<NodeType*>(byIndex.at(to)),
+                                        label,
+                                        jEdge["aux"]);
+        }
+
+        /* Was there type information? */
+        if (j.contains("type")) {
+            if (j["type"].asString() == "directed") {
+                type(Type::DIRECTED);
+            } else if (j["type"].asString() == "undirected") {
+                type(Type::UNDIRECTED);
+            } else {
+                error("Unknown graph type: " + j["type"].asString());
+            }
         }
     }
 

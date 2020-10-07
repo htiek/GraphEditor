@@ -157,6 +157,9 @@ namespace GraphEditor {
 
     void ViewerBase::drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
                                    double thickness, const std::string& color) {
+        /* Skip arrowheads if graph is undirected. */
+        if (type() == Type::UNDIRECTED) return;
+
         /* Draw the arrowheads. First, get a vector pointing from end to start so that
          * we can shift it around to compute the endpoints.
          */
@@ -395,8 +398,10 @@ namespace GraphEditor {
 
                 /* If there is a transition running in the reverse direction, we need to shift
                  * this transition over so that we don't overlap it.
+                 *
+                 * Skip this if the graph is undirected.
                  */
-                if (hasEdge(transition->to(), transition->from())) {
+                if (type() == Type::DIRECTED && hasEdge(transition->to(), transition->from())) {
                     /* Unit vector pointing in the p0 -> p1 direction saying how much we need to rotate. */
                     auto p0Delta = rotate(normalizationOf(p1 - p0), kAvoidanceRotation);
 
@@ -677,12 +682,74 @@ namespace GraphEditor {
     }
 
     bool ViewerBase::hasEdge(Node* from, Node* to) {
-        return edges.count(from) && edges[from].count(to);
+        return edgeBetween(from, to) != nullptr;
     }
 
     Edge* ViewerBase::edgeBetween(Node* from, Node* to) {
+        /* If the graph is undirected, get from and to into the right order. */
+        if (type() == Type::UNDIRECTED && from->index() >= to->index()) {
+            std::swap(from, to);
+        }
+
         if (!edges.count(from) || !edges.at(from).count(to)) return nullptr;
         return edges.at(from).at(to).get();
+    }
+
+    Type ViewerBase::type() const {
+        return mType;
+    }
+
+    void ViewerBase::type(Type type) {
+        /* This could be a no-op if the type already matches our underlying type. */
+        if (type == mType) return;
+
+        /* Converting undirected to directed is basically a no-op internally. */
+        if (type == Type::DIRECTED) {
+            // Nothing to do
+        }
+        /* Converting directed to undirected requires us to delete all self-loops
+         * and to break ties between pairs of edges.
+         */
+        else if (type == Type::UNDIRECTED) {
+            std::vector<Edge*> toNix;
+            std::vector<Edge*> toFlip;
+            forEachEdge([&](Edge* edge) {
+                /* Ensure the invariant that from() < to() for all edges. */
+                if (edge->from()->index() >= edge->to()->index()) {
+                    /* If the reverse edge exists, then delete it. This also handles
+                     * self-loops.
+                     */
+                    if (edgeBetween(edge->to(), edge->from())) {
+                        toNix.push_back(edge);
+                    } else {
+                        toFlip.push_back(edge);
+                    }
+                }
+            });
+
+            /* Delete all edges that need to be dealt with. */
+            for (Edge* edge: toNix) {
+                removeEdge(edge);
+            }
+
+            /* Flip all other edges. */
+            for (Edge* flip: toFlip) {
+                /* Invert the underlying map. */
+                edges[flip->to()][flip->from()] = edges[flip->from()][flip->to()];
+                edges[flip->from()][flip->to()].reset();
+
+                /* Change the underlying edge details. */
+                std::swap(flip->mFrom, flip->mTo);
+            }
+        }
+
+        /* Set the type for future reference. */
+        mType = type;
+    }
+
+    void ViewerBase::removeEdge(Edge* edge) {
+        edges[edge->from()].erase(edge->to());
+        calculateEdgeEndpoints();
     }
 
     Node* ViewerBase::nodeLabeled(const std::string& label) {
@@ -821,7 +888,8 @@ namespace GraphEditor {
      *
      * {"nodes", [<node data>],
      *  "edges", [<edge data>],
-     *  "aux",   <aux data>}
+     *  "aux",   <aux data>,
+     *  "type",  <graph type>}
      *
      * Here, each node is encoded as
      *
@@ -857,6 +925,16 @@ namespace GraphEditor {
         return result;
     }
 
+    JSON ViewerBase::typeToJSON() {
+        if (mType == Type::DIRECTED) {
+            return "directed";
+        } else if (mType == Type::UNDIRECTED) {
+            return "undirected";
+        } else {
+            error("Unknown graph type?");
+        }
+    }
+
     /* Default aux data is nothing at all. */
     JSON ViewerBase::auxData() {
         return nullptr;
@@ -877,10 +955,10 @@ namespace GraphEditor {
         return JSON::object({
             { "nodes", nodesToJSON() },
             { "edges", edgesToJSON() },
-            { "aux",   auxData()     }
+            { "aux",   auxData()     },
+            { "type",  typeToJSON()  }
         });
     }
-
 
     /* Default serializers. */
     JSON Node::toJSON() {
