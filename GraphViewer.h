@@ -474,13 +474,15 @@ namespace GraphEditor {
         }
 
         freeNodeIDs.insert(node->index());
-        calculateEdgeEndpoints();
 
         /* Only at the very end should we remove the node from the set of nodes.
          * Doing so may break the last pointer to the node, at which point the
          * node becomes invalid.
          */
         nodes.erase(itr);
+
+        /* Now, recalculate edges without this node present. */
+        calculateEdgeEndpoints();
     }
 
     template <typename NodeType, typename EdgeType>
