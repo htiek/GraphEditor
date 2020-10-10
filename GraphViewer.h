@@ -458,8 +458,6 @@ namespace GraphEditor {
         });
         if (itr == nodes.end()) return;
 
-        nodes.erase(itr);
-
         /* Remove transitions from the state. */
         edges.erase(node);
 
@@ -476,8 +474,13 @@ namespace GraphEditor {
         }
 
         freeNodeIDs.insert(node->index());
-
         calculateEdgeEndpoints();
+
+        /* Only at the very end should we remove the node from the set of nodes.
+         * Doing so may break the last pointer to the node, at which point the
+         * node becomes invalid.
+         */
+        nodes.erase(itr);
     }
 
     template <typename NodeType, typename EdgeType>
