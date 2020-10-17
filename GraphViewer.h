@@ -417,6 +417,9 @@ namespace GraphEditor {
     std::shared_ptr<NodeType> Viewer<NodeType, EdgeType>::newNode(const GPoint& pt, size_t index, const std::string& label, JSON j) {
         auto result = std::shared_ptr<NodeType>(new NodeType(this, NodeArgs{pt, index, label}, j));
         nodes.insert(result);
+
+        /* Reposition to the point; this forces the point to be in bounds. */
+        result->position(pt);
         return result;
     }
 
