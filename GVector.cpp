@@ -5,7 +5,7 @@ using namespace std;
 
 /* Subtracting two points gives a vector. */
 GVector operator- (const GPoint& p1, const GPoint& p2) {
-    return { p1.getX() - p2.getX(), p1.getY() - p2.getY() };
+    return { p1.x - p2.x, p1.y - p2.y };
 }
 
 /* Subtracting two vectors gives a vector. */
@@ -20,7 +20,7 @@ GVector& operator-= (GVector& lhs, const GVector& rhs) {
 
 /* Adding a point and a vector gives a point. */
 GPoint  operator+ (const GVector& v, const GPoint& p) {
-    return { v.x + p.getX(), v.y + p.getY() };
+    return { v.x + p.x, v.y + p.y };
 }
 GPoint  operator+ (const GPoint& p, const GVector& v) {
     return v + p;
@@ -31,7 +31,7 @@ GPoint& operator+= (GPoint& lhs, const GVector& rhs) {
 }
 
 GPoint  operator- (const GPoint& p, const GVector& v) {
-    return { p.getX() - v.x, p.getY() - v.y };
+    return { p.x - v.x, p.y - v.y };
 }
 GPoint& operator-= (GPoint& lhs, const GVector& rhs) {
     lhs = (lhs - rhs);
@@ -127,7 +127,7 @@ GVector operator* (const GMatrix& m, const GVector& v) {
     return { m.a * v.x + m.b * v.y, m.c * v.x + m.d * v.y };
 }
 GPoint operator* (const GMatrix& m, const GPoint& v) {
-    return { m.a * v.getX() + m.b * v.getY(), m.c * v.getX() + m.d * v.getY() };
+    return { m.a * v.x + m.b * v.y, m.c * v.x + m.d * v.y };
 }
 
 GMatrix operator* (const GMatrix& m, const GMatrix& n) {

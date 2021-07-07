@@ -129,8 +129,8 @@ namespace GraphEditor {
 
     namespace {
         bool isCloseTo(GPoint p0, GPoint p1, double distance) {
-            double dx = p0.getX() - p1.getX();
-            double dy = p0.getY() - p1.getY();
+            double dx = p0.x - p1.x;
+            double dy = p0.y - p1.y;
 
             return dx * dx + dy * dy <= distance * distance;
         }

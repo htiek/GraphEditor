@@ -7,6 +7,7 @@
 
 #include "gobjects.h"
 #include "gwindow.h"
+#include "../GUI/Font.h"
 #include "Utilities/JSON.h"
 #include <string>
 #include <set>
@@ -44,19 +45,8 @@ namespace GraphEditor {
      */
     const double kEdgeTolerance = 16.0 / 1000;
 
-    /* Fonts used. Exposed so that other renderers can use the same fonts as us.
-     * Ubuntu linux nails this with the defaults. Windows requires some hinting
-     * to ensure that all the different characters show up. The fonts used on Windows
-     * are (at least, according to Wikipedia) shipped with the OS and don't require any
-     * custom installs.
-     */
-    #ifndef _WIN32
-        const char* const kEdgeFont = "Monospace-18";
-        const char* const kNodeFont = "Serif-ITALIC-18";
-    #else
-        const char* const kEdgeFont = "Lucida Sans Unicode-18";
-        const char* const kNodeFont = "Times New Roman-ITALIC-18";
-    #endif
+    const MiniGUI::Font kEdgeFont(MiniGUI::FontFamily::UNICODE_MONOSPACE, MiniGUI::FontStyle::NORMAL, 18, "black");
+    const MiniGUI::Font kNodeFont(MiniGUI::FontFamily::UNICODE_SERIF,     MiniGUI::FontStyle::ITALIC, 18, "black");
 
     /* Default graphics parameters. */
     const double kNodeBorderWidth = 3.0 / 1000; // 3px on a 1000px window

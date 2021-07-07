@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <cctype>
+using namespace MiniGUI;
 
 namespace GraphEditor {
     namespace {
@@ -14,7 +15,7 @@ namespace GraphEditor {
         const std::string kNonbreakingSpace = toUTF8(0xA0);
 
         /* State graphics parameters. */
-        const std::string kStateFontColor = "black";
+        const Font kStateFont = kNodeFont;
 
         /* Transition graphics parameters. */
         const double kLoopTransitionRadius = GraphEditor::kNodeRadius * 0.75;
@@ -23,7 +24,7 @@ namespace GraphEditor {
         const double kLoopLabelLength = 150 / 1000.0;
 
         /* Font and height for transitions. */
-        const std::string kTransitionFontColor = GraphEditor::kEdgeColor;
+        const Font kTransitionFont = kEdgeFont;
         const double kTransitionTextHeight = 48.0 / 1000; // 24pt in 1000px window
 
         /* Amount to offset the label by relative to the transition. */
@@ -112,8 +113,8 @@ namespace GraphEditor {
 
     namespace {
         bool isCloseTo(GPoint p0, GPoint p1, double distance) {
-            double dx = p0.getX() - p1.getX();
-            double dy = p0.getY() - p1.getY();
+            double dx = p0.x - p1.x;
+            double dy = p0.y - p1.y;
 
             return dx * dx + dy * dy <= distance * distance;
         }
@@ -123,24 +124,24 @@ namespace GraphEditor {
         return width / this->width;
     }
     GPoint ViewerBase::graphicsToWorld(GPoint in) {
-        return { (in.getX() - baseX) / width, (in.getY() - baseY) / width };
+        return { (in.x - baseX) / width, (in.y - baseY) / width };
     }
     GRectangle ViewerBase::graphicsToWorld(GRectangle in) {
-        auto top = graphicsToWorld(GPoint{ in.getX(), in.getY() });
-        auto bot = graphicsToWorld(GPoint{ in.getX() + in.getWidth(), in.getY() + in.getHeight() });
-        return { top.getX(), top.getY(), bot.getX() - top.getX(), bot.getY() - top.getY() };
+        auto top = graphicsToWorld(GPoint{ in.x, in.y });
+        auto bot = graphicsToWorld(GPoint{ in.x + in.width, in.y + in.height });
+        return { top.x, top.y, bot.x - top.x, bot.y - top.y };
     }
 
     double ViewerBase::worldToGraphics(double width) {
         return width * this->width;
     }
     GPoint ViewerBase::worldToGraphics(GPoint in) {
-        return { in.getX() * width + baseX, in.getY() * width + baseY };
+        return { in.x * width + baseX, in.y * width + baseY };
     }
     GRectangle ViewerBase::worldToGraphics(GRectangle in) {
-        auto top = worldToGraphics(GPoint{ in.getX(), in.getY() });
-        auto bot = worldToGraphics(GPoint{ in.getX() + in.getWidth(), in.getY() + in.getHeight() });
-        return { top.getX(), top.getY(), bot.getX() - top.getX(), bot.getY() - top.getY() };
+        auto top = worldToGraphics(GPoint{ in.x, in.y });
+        auto bot = worldToGraphics(GPoint{ in.x + in.width, in.y + in.height });
+        return { top.x, top.y, bot.x - top.x, bot.y - top.y };
     }
 
     /* All parameters are in world coordinates. */
@@ -526,12 +527,12 @@ namespace GraphEditor {
         /* Determine what font we should use for the label by computing a text render
          * and extracting the font it uses.
          */
-        std::string font = TextRender::construct(label, {0, 0, length, width * kTransitionTextHeight }, kTransitionFontColor, kEdgeFont)->computedFont();
+        Font font = TextRender::construct(label, {0, 0, length, width * kTransitionTextHeight }, kTransitionFont)->computedFont();
 
         /* Create a graphics object for the label. */
         GText text(label);
-        text.setFont(font);
-        text.setColor(kTransitionFontColor);
+        text.setFont(font.stanfordCPPLibFontString());
+        text.setColor(font.color());
 
         /* Figure out where the label needs to go. */
         double theta = angleOf(to - from);
@@ -634,7 +635,7 @@ namespace GraphEditor {
         double size = 2 * editor->width * kLoopTransitionRadius;
         GPoint pt = editor->worldToGraphics(center);
 
-        GOval toDraw(pt.getX() - size / 2, pt.getY() - size / 2, size, size);
+        GOval toDraw(pt.x - size / 2, pt.y - size / 2, size, size);
         toDraw.setColor(color);
         toDraw.setLineWidth(ceil(editor->width * width));
         canvas->draw(&toDraw);
@@ -776,16 +777,16 @@ namespace GraphEditor {
         rawBounds = bounds;
 
         /* Too narrow? */
-        if (bounds.getWidth() / bounds.getHeight() <= mAspectRatio) {
-            width = bounds.getWidth();
+        if (bounds.width / bounds.height <= mAspectRatio) {
+            width = bounds.width;
             height = width / mAspectRatio;
         } else {
-            height = bounds.getHeight();
+            height = bounds.height;
             width = height * mAspectRatio;
         }
 
-        baseX = bounds.getX() + (bounds.getWidth()  - width)  / 2.0;
-        baseY = bounds.getY() + (bounds.getHeight() - height) / 2.0;
+        baseX = bounds.x + (bounds.width  - width)  / 2.0;
+        baseY = bounds.y + (bounds.height - height) / 2.0;
     }
 
     double ViewerBase::aspectRatio() {
@@ -824,11 +825,11 @@ namespace GraphEditor {
 
     void Node::position(const GPoint& pt) {
         /* Clamp to appropriate bounds. */
-        double x = pt.getX();
+        double x = pt.x;
         if (x < kNodeRadius) x = kNodeRadius;
         if (x > 1 - kNodeRadius) x = 1 - kNodeRadius;
 
-        double y = pt.getY();
+        double y = pt.y;
         if (y < kNodeRadius) y = kNodeRadius;
         if (y > 1 / owner->aspectRatio() - kNodeRadius) y = 1 / owner->aspectRatio() - kNodeRadius;
 
@@ -839,9 +840,9 @@ namespace GraphEditor {
     void Node::draw(ViewerBase* editor, GCanvas* canvas, const NodeStyle& style) {
         /* Calculate the size of the state. */
         double size = 2.0 * style.radius;
-        auto bounds = editor->worldToGraphics({ position().getX() - size / 2.0, position().getY() - size / 2.0, size, size });
+        auto bounds = editor->worldToGraphics({ position().x - size / 2.0, position().y - size / 2.0, size, size });
 
-        GOval mainState(bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight());
+        GOval mainState(bounds.x, bounds.y, bounds.width, bounds.height);
 
         mainState.setFilled(true);
         mainState.setFillColor(style.fillColor);
@@ -850,7 +851,7 @@ namespace GraphEditor {
         canvas->draw(&mainState);
 
         /* Draw the state name. */
-        auto render = TextRender::construct(label(), bounds, kStateFontColor, kNodeFont);
+        auto render = TextRender::construct(label(), bounds, kStateFont);
         render->alignCenterVertically();
         render->alignCenterHorizontally();
         render->draw(canvas);
@@ -912,7 +913,7 @@ namespace GraphEditor {
         return JSON::object({
             { "index", node->index() },
             { "label", node->label() },
-            { "pos",   JSON::array(node->position().getX(), node->position().getY()) },
+            { "pos",   JSON::array(node->position().x, node->position().y) },
             { "aux",   node->toJSON() }
         });
     }
