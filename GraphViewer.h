@@ -60,12 +60,14 @@ namespace GraphEditor {
         double lineWidth        = kNodeBorderWidth;
         std::string fillColor   = kNodeColor;
         std::string borderColor = kNodeBorderColor;
+        std::string textColor   = kNodeBorderColor;
     };
 
     /* Styling for transitions. */
     struct EdgeStyle {
-        double lineWidth  = kEdgeWidth;
-        std::string color = kEdgeColor;
+        double lineWidth       = kEdgeWidth;
+        std::string lineColor  = kEdgeColor;
+        std::string labelColor = kEdgeColor;
     };
 
     /* Base type for graph entities. */
@@ -287,8 +289,10 @@ namespace GraphEditor {
         /* Graphics routines. */
         void drawTransition(GCanvas* canvas, std::shared_ptr<Edge> transition);
 
-        void drawTransitionLabel(GCanvas* canvas, const GPoint& p0, const GPoint& p1,
-                                 const std::string& label, bool hugLine);
+        void drawEdgeLabel(GCanvas* canvas, const GPoint& p0, const GPoint& p1,
+                                 const std::string& label,
+                                 const std::string& color,
+                                 bool hugLine);
         void drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
                            double thickness, const std::string& color);
 

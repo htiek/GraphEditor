@@ -14,25 +14,21 @@ namespace GraphEditor {
         /* Useful, not required. */
         const std::string kNonbreakingSpace = toUTF8(0xA0);
 
-        /* State graphics parameters. */
-        const Font kStateFont = kNodeFont;
+        /* Edge graphics parameters. */
+        const double kLoopEdgeRadius = GraphEditor::kNodeRadius * 0.75;
 
-        /* Transition graphics parameters. */
-        const double kLoopTransitionRadius = GraphEditor::kNodeRadius * 0.75;
-
-        /* Length of the invisible line on which to draw the contents of a loop transition. */
+        /* Length of the invisible line on which to draw the contents of a loop edge. */
         const double kLoopLabelLength = 150 / 1000.0;
 
-        /* Font and height for transitions. */
-        const Font kTransitionFont = kEdgeFont;
-        const double kTransitionTextHeight = 48.0 / 1000; // 24pt in 1000px window
+        /* Font and height for edges. */
+        const double kEdgeTextHeight = 48.0 / 1000; // 24pt in 1000px window
 
-        /* Amount to offset the label by relative to the transition. */
-        const double kTransitionLabelYOffset = 8.0 / 1000;
-        const double kLoopTransitionYOffset  = 30.0 / 1000;
+        /* Amount to offset the label by relative to the edge. */
+        const double kEdgeLabelYOffset = 8.0 / 1000;
+        const double kLoopEdgeYOffset  = 30.0 / 1000;
 
         /* How much, in radians, to rotate the origin points of the states when shifting
-         * start positions of transitions.
+         * start positions of edges.
          */
         const double kAvoidanceRotation = -M_PI / 6;
 
@@ -46,23 +42,23 @@ namespace GraphEditor {
         const int kAngleStep = 10;
     }
 
-    /* Transitions can be either line transitions or loop transitions. */
+    /* Edges can be either line edges or loop edges. */
     struct EdgeRender {
-        EdgeRender(ViewerBase* editor, Edge* transition): editor(editor), transition(transition) {}
+        EdgeRender(ViewerBase* editor, Edge* edge): editor(editor), edge(edge) {}
         virtual ~EdgeRender() = default;
 
-        virtual void draw(GCanvas* canvas, double thickness, const std::string& color) const = 0;
+        virtual void draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& textColor) const = 0;
         virtual bool contains(const GPoint& pt) const = 0;
 
         ViewerBase* editor;
-        Edge* transition;
+        Edge* edge;
     };
 
-    /* Linear transition. */
+    /* Linear edge. */
     struct LineEdge: EdgeRender {
-        LineEdge(ViewerBase* editor, Edge* transition, GPoint from, GPoint to) : EdgeRender(editor, transition), lineStart(from), lineEnd(to) {}
+        LineEdge(ViewerBase* editor, Edge* edge, GPoint from, GPoint to) : EdgeRender(editor, edge), lineStart(from), lineEnd(to) {}
 
-        void draw(GCanvas* canvas, double thickness, const std::string& color) const override;
+        void draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& textColor) const override;
         bool contains(const GPoint& pt) const override;
 
         GPoint lineStart, lineEnd;
@@ -70,12 +66,12 @@ namespace GraphEditor {
 
     /* Self-loop. */
     struct LoopEdge: EdgeRender {
-        LoopEdge(ViewerBase* editor, Edge* transition, const GPoint& center, const GPoint& arrowPt) : EdgeRender(editor, transition), center(center), arrowPt(arrowPt) {}
+        LoopEdge(ViewerBase* editor, Edge* edge, const GPoint& center, const GPoint& arrowPt) : EdgeRender(editor, edge), center(center), arrowPt(arrowPt) {}
 
-        void draw(GCanvas* canvas, double thickness, const std::string& color) const override;
+        void draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& textColor) const override;
         bool contains(const GPoint& pt) const override;
 
-        /* Transition is represented by a circle. Where is the center of that
+        /* Edge is represented by a circle. Where is the center of that
          * circle?
          */
         GPoint center;
@@ -85,29 +81,29 @@ namespace GraphEditor {
     };
 
     void ViewerBase::draw(GCanvas* canvas,
-                      const std::unordered_map<Node*, NodeStyle>& stateStyles,
-                      const std::unordered_map<Edge*, EdgeStyle>& transitionStyles) {
+                      const std::unordered_map<Node*, NodeStyle>& nodeStyles,
+                      const std::unordered_map<Edge*, EdgeStyle>& edgeStyles) {
         /* TODO: This is for testing purposes. Please remove this. */
         canvas->setColor("red");
         canvas->drawRect(baseX, baseY, width, height);
 
-        /* Existing transitions underdraw the states so we don't see the lines. */
+        /* Existing edges underdraw the nodes so we don't see the lines. */
         for (auto start: edges) {
             for (auto end: start.second) {
                 /* We could have null entries; skip them. */
                 /* TODO: Is this true? */
                 if (end.second) {
-                    auto style = transitionStyles.count(end.second.get()) ? transitionStyles.at(end.second.get()) : EdgeStyle();
-                    end.second->style->draw(canvas, style.lineWidth, style.color);
+                    auto style = edgeStyles.count(end.second.get()) ? edgeStyles.at(end.second.get()) : EdgeStyle();
+                    end.second->style->draw(canvas, style.lineWidth, style.lineColor, style.labelColor);
                 }
             }
         }
 
-        /* States. */
-        for (auto state: nodes) {
-            auto style = stateStyles.count(state.get())? stateStyles.at(state.get()) : NodeStyle();
+        /* Nodes. */
+        for (auto node: nodes) {
+            auto style = nodeStyles.count(node.get())? nodeStyles.at(node.get()) : NodeStyle();
 
-            state->draw(this, canvas, style);
+            node->draw(this, canvas, style);
         }
     }
 
@@ -257,7 +253,7 @@ namespace GraphEditor {
         /* Determines the best angle at which to orient a self-loop, which is one that
          * hits the fewest other objects.
          */
-        double bestThetaFor(const GPoint& stateCenter, const std::vector<std::pair<GPoint, GPoint>>& lines,
+        double bestThetaFor(const GPoint& nodeCenter, const std::vector<std::pair<GPoint, GPoint>>& lines,
                             const std::vector<std::pair<GPoint, double>>& circles) {
             /* Our algorithm for placing the circle goes as follows. We iterate over a fixed
              * number of potential angles that we can use. For each one, we count the number
@@ -275,9 +271,9 @@ namespace GraphEditor {
             std::vector<std::size_t> collisions;
             for (int degAngle = kLowAngle; degAngle < kHighAngle; degAngle += kAngleStep) {
                 double theta = degAngle * M_PI / 180;
-                GPoint center = stateCenter + unitToward(theta) * kNodeRadius;
+                GPoint center = nodeCenter + unitToward(theta) * kNodeRadius;
 
-                collisions.push_back(collisionsBetween(center, kLoopTransitionRadius, lines, circles));
+                collisions.push_back(collisionsBetween(center, kLoopEdgeRadius, lines, circles));
             }
 
             /* Find the minimum number of collisions. */
@@ -331,10 +327,10 @@ namespace GraphEditor {
             return (lowTheta + highTheta) / 2;
         }
 
-        /* Given the center of a state and the point at which the loop is centered, returns
+        /* Given the center of a node and the point at which the loop is centered, returns
          * a point where they intersect - a place where the arrow can be drawn.
          */
-        GPoint loopArrowPointFor(const GPoint& stateCenter, const GPoint& loopCenter) {
+        GPoint loopArrowPointFor(const GPoint& nodeCenter, const GPoint& loopCenter) {
             /* Trig time! We have two circles where one is centered on the border of
              * another. We want to then find one of the intersection points. How do we
              * do it?
@@ -346,10 +342,10 @@ namespace GraphEditor {
              *           r  /   \ r'
              *             /  r  \
              *            * ----- *
-             *          state      loop
+             *          node      loop
              *         center     center
              *
-             * We want to know the angle theta that is made between the state center,
+             * We want to know the angle theta that is made between the node center,
              * the loop center, and the third triangle point (their intersection). The
              * Law of Cosines tells us that
              *
@@ -361,10 +357,10 @@ namespace GraphEditor {
              *
              * Use this to get that angle measure.
              */
-            double theta = acos(1 - kLoopTransitionRadius * kLoopTransitionRadius / (2 * kNodeRadius * kNodeRadius));
+            double theta = acos(1 - kLoopEdgeRadius * kLoopEdgeRadius / (2 * kNodeRadius * kNodeRadius));
 
-            /* Rotate the vector from the state to loop center by this amount. */
-            return stateCenter + rotate(loopCenter - stateCenter, theta);
+            /* Rotate the vector from the node to loop center by this amount. */
+            return nodeCenter + rotate(loopCenter - nodeCenter, theta);
         }
 
         /* Boundaries of the world, represented as lines. */
@@ -383,26 +379,26 @@ namespace GraphEditor {
         }
     }
 
-    /* Determines where each transition should start and end. There are dependencies
-     * across these transitions, so we need to do this all at once.
+    /* Determines where each edge should start and end. There are dependencies
+     * across these edges, so we need to do this all at once.
      */
     void ViewerBase::calculateEdgeEndpoints() {
         /* List of all line segments used. */
         std::vector<std::pair<GPoint, GPoint>> lines = worldBoundaries(mAspectRatio);
 
-        /* First, handle linear transitions. */
-        forEachEdge([&](Edge* transition) {
-            if (transition->from() != transition->to()) {
+        /* First, handle linear edges. */
+        forEachEdge([&](Edge* edge) {
+            if (edge->from() != edge->to()) {
                 /* Center coordinates. */
-                GPoint p0 = transition->from()->position();
-                GPoint p1 = transition->to()->position();
+                GPoint p0 = edge->from()->position();
+                GPoint p1 = edge->to()->position();
 
-                /* If there is a transition running in the reverse direction, we need to shift
-                 * this transition over so that we don't overlap it.
+                /* If there is a edge running in the reverse direction, we need to shift
+                 * this edge over so that we don't overlap it.
                  *
                  * Skip this if the graph is undirected.
                  */
-                if (type() == Type::DIRECTED && hasEdge(transition->to(), transition->from())) {
+                if (type() == Type::DIRECTED && hasEdge(edge->to(), edge->from())) {
                     /* Unit vector pointing in the p0 -> p1 direction saying how much we need to rotate. */
                     auto p0Delta = rotate(normalizationOf(p1 - p0), kAvoidanceRotation);
 
@@ -419,32 +415,32 @@ namespace GraphEditor {
                     p1 += normalizationOf(p0 - p1) * kNodeRadius;
                 }
 
-                transition->style = std::make_shared<LineEdge>(this, transition, p0, p1);
+                edge->style = std::make_shared<LineEdge>(this, edge, p0, p1);
                 lines.push_back(std::make_pair(p0, p1));
             }
         });
 
-        /* All placed circles. Initially, that's all the states. */
+        /* All placed circles. Initially, that's all the nodes. */
         std::vector<std::pair<GPoint, double>> circles;
-        for (auto state: nodes) {
-            circles.push_back(std::make_pair(state->position(), kNodeRadius));
+        for (auto node: nodes) {
+            circles.push_back(std::make_pair(node->position(), kNodeRadius));
         }
 
         /* Now, place all self-loops. */
-        forEachEdge([&](Edge* transition) {
-            if (transition->from() == transition->to()) {
-                double theta = bestThetaFor(transition->from()->position(), lines, circles);
+        forEachEdge([&](Edge* edge) {
+            if (edge->from() == edge->to()) {
+                double theta = bestThetaFor(edge->from()->position(), lines, circles);
 
-                GPoint center  = transition->from()->position() + unitToward(theta) * kNodeRadius;
-                GPoint arrowPt = loopArrowPointFor(transition->from()->position(), center);
+                GPoint center  = edge->from()->position() + unitToward(theta) * kNodeRadius;
+                GPoint arrowPt = loopArrowPointFor(edge->from()->position(), center);
 
-                transition->style = std::make_shared<LoopEdge>(this, transition, center, arrowPt);
+                edge->style = std::make_shared<LoopEdge>(this, edge, center, arrowPt);
                 circles.push_back(std::make_pair(center, kNodeRadius));
             }
         });
     }
 
-    /* Linear transition implementation. */
+    /* Linear edge implementation. */
     bool LineEdge::contains(const GPoint& pt) const {
         /* Our goal is to see both (1) how far from the line we are and (2) how far
          * down the line we are.
@@ -467,7 +463,7 @@ namespace GraphEditor {
          * and it needs to have a y coordinate between zero and the length of the line.
          */
 
-        /* Switch coordinate systems to place the origin of the transition at (0, 0). */
+        /* Switch coordinate systems to place the origin of the edge at (0, 0). */
         GVector cursor = pt - lineStart;
 
         /* Get the vectors b1 and b2. */
@@ -512,10 +508,11 @@ namespace GraphEditor {
         }
     }
 
-    void ViewerBase::drawTransitionLabel(GCanvas* canvas,
-                                         const GPoint& p0, const GPoint& p1,
-                                         const std::string& labelText,
-                                         bool hugLine) {
+    void ViewerBase::drawEdgeLabel(GCanvas* canvas,
+                                   const GPoint& p0, const GPoint& p1,
+                                   const std::string& labelText,
+                                   const std::string& color,
+                                   bool hugLine) {
         GPoint from = worldToGraphics(p0);
         GPoint to   = worldToGraphics(p1);
 
@@ -527,7 +524,7 @@ namespace GraphEditor {
         /* Determine what font we should use for the label by computing a text render
          * and extracting the font it uses.
          */
-        Font font = TextRender::construct(label, {0, 0, length, width * kTransitionTextHeight }, kTransitionFont)->computedFont();
+        Font font = TextRender::construct(label, {0, 0, length, width * kEdgeTextHeight }, kEdgeFont.color(color))->computedFont();
 
         /* Create a graphics object for the label. */
         GText text(label);
@@ -557,17 +554,17 @@ namespace GraphEditor {
             }
         }
 
-        /* We'll aim to draw on the transition as the baseline,
-         * so we need to compute the (x, y) coordinate of the transition center.
+        /* We'll aim to draw on the edge as the baseline,
+         * so we need to compute the (x, y) coordinate of the edge center.
          *
          * ... except that it's not the exact center. Rather, it's the center of the
-         * transition, offset by half the width of the label. In other words, we want
+         * edge, offset by half the width of the label. In other words, we want
          * to walk to the center, then advance a bit further
          */
         GPoint target = from + normalizationOf(to - from) * (length - text.getWidth()) / 2.0;
 
         /* Now, shift up off the line. */
-        target += rotate(normalizationOf(to - from), -M_PI / 2) * ceil(width * kTransitionLabelYOffset);
+        target += rotate(normalizationOf(to - from), -M_PI / 2) * ceil(width * kEdgeLabelYOffset);
 
         /* GText behaves strangely when rotated. The rotation is done around
          * the graphics origin point (0, 0) rather than the center of the object.
@@ -593,7 +590,7 @@ namespace GraphEditor {
 
     Node* ViewerBase::nodeAt(const GPoint& pt) {
         /* TODO: Do we need to do this in reverse so that we pick the
-         * topmost state?
+         * topmost node?
          */
         for (auto node: nodes) {
             if (isCloseTo(pt, node->position(), kNodeRadius)) {
@@ -607,7 +604,7 @@ namespace GraphEditor {
     Edge* ViewerBase::edgeAt(const GPoint& pt) {
         for (const auto& one: edges) {
             for (const auto& two: one.second) {
-                /* Get the transition itself. */
+                /* Get the edge itself. */
                 auto edge = two.second;
 
                 if (edge->style->contains(pt)) {
@@ -619,58 +616,58 @@ namespace GraphEditor {
         return nullptr;
     }
 
-    void LineEdge::draw(GCanvas* canvas, double thickness, const std::string& color) const {
-        editor->drawArrow(canvas, lineStart, lineEnd, thickness, color);
-        editor->drawTransitionLabel(canvas, lineStart, lineEnd, transition->label(), false);
+    void LineEdge::draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& labelColor) const {
+        editor->drawArrow(canvas, lineStart, lineEnd, thickness, lineColor);
+        editor->drawEdgeLabel(canvas, lineStart, lineEnd, edge->label(), labelColor, false);
     }
 
     bool LoopEdge::contains(const GPoint& pt) const {
         /* We hit the circle if our distance to the center is within kHover of the
          * actual radius.
          */
-        return fabs(magnitudeOf(pt - center) - kLoopTransitionRadius) < kEdgeTolerance;
+        return fabs(magnitudeOf(pt - center) - kLoopEdgeRadius) < kEdgeTolerance;
     }
 
-    void LoopEdge::draw(GCanvas* canvas, double width, const std::string& color) const {
-        double size = 2 * editor->width * kLoopTransitionRadius;
+    void LoopEdge::draw(GCanvas* canvas, double width, const std::string& lineColor, const std::string& labelColor) const {
+        double size = 2 * editor->width * kLoopEdgeRadius;
         GPoint pt = editor->worldToGraphics(center);
 
         GOval toDraw(pt.x - size / 2, pt.y - size / 2, size, size);
-        toDraw.setColor(color);
+        toDraw.setColor(lineColor);
         toDraw.setLineWidth(ceil(editor->width * width));
         canvas->draw(&toDraw);
 
         /* Draw the arrowhead. You might think that we'd want the arrowhead
-         * to appear as though it was entering the state normal to the circle
+         * to appear as though it was entering the node normal to the circle
          * at the intersection point, but, surprisingly, that doesn't look good.
          * Instead, it's better to look like you're hitting the the circle
-         * tangent to the line drawn between the state center and the loop
+         * tangent to the line drawn between the node center and the loop
          * center.
          */
-        GPoint exterior = arrowPt + (center - transition->from()->position());
-        editor->drawArrowhead(canvas, exterior, arrowPt, width, color);
+        GPoint exterior = arrowPt + (center - edge->from()->position());
+        editor->drawArrowhead(canvas, exterior, arrowPt, width, lineColor);
 
 
-        /* We will draw the transition contents by imagining there's an invisible tangent
+        /* We will draw the edge contents by imagining there's an invisible tangent
          * line to the circle that we'll draw on top of.
          */
 
         /* Get a vector pointing away from the circle center. */
-        GVector out = normalizationOf(center - transition->from()->position());
+        GVector out = normalizationOf(center - edge->from()->position());
 
         /* Move outward to the end of the loop. */
-        GPoint tangentPoint = center + out * (kLoopTransitionRadius + kLoopTransitionYOffset);
+        GPoint tangentPoint = center + out * (kLoopEdgeRadius + kLoopEdgeYOffset);
 
         /* Construct a perpendicular vector and use it to form a line. */
         GVector tangent = rotate(out, M_PI / 2);
         GPoint p0 = tangentPoint + tangent * kLoopLabelLength / 2;
         GPoint p1 = tangentPoint - tangent * kLoopLabelLength / 2;
-        editor->drawTransitionLabel(canvas, p0, p1, transition->label(), true);
+        editor->drawEdgeLabel(canvas, p0, p1, edge->label(), labelColor, true);
     }
 
     void ViewerBase::forEachNode(std::function<void (Node *)> callback) {
-        for (const auto& state: nodes) {
-            callback(state.get());
+        for (const auto& node: nodes) {
+            callback(node.get());
         }
     }
 
@@ -838,20 +835,20 @@ namespace GraphEditor {
     }
 
     void Node::draw(ViewerBase* editor, GCanvas* canvas, const NodeStyle& style) {
-        /* Calculate the size of the state. */
+        /* Calculate the size of the node. */
         double size = 2.0 * style.radius;
         auto bounds = editor->worldToGraphics({ position().x - size / 2.0, position().y - size / 2.0, size, size });
 
-        GOval mainState(bounds.x, bounds.y, bounds.width, bounds.height);
+        GOval mainNode(bounds.x, bounds.y, bounds.width, bounds.height);
 
-        mainState.setFilled(true);
-        mainState.setFillColor(style.fillColor);
-        mainState.setLineWidth(ceil(editor->worldToGraphics(style.lineWidth)));
-        mainState.setColor(style.borderColor);
-        canvas->draw(&mainState);
+        mainNode.setFilled(true);
+        mainNode.setFillColor(style.fillColor);
+        mainNode.setLineWidth(ceil(editor->worldToGraphics(style.lineWidth)));
+        mainNode.setColor(style.borderColor);
+        canvas->draw(&mainNode);
 
-        /* Draw the state name. */
-        auto render = TextRender::construct(label(), bounds, kStateFont);
+        /* Draw the node name. */
+        auto render = TextRender::construct(label(), bounds, kNodeFont.color(style.textColor));
         render->alignCenterVertically();
         render->alignCenterHorizontally();
         render->draw(canvas);

@@ -36,8 +36,17 @@ namespace GraphEditor {
         /* Draws the underlying viewer. Use this rather than manually
          * asking the viewer to draw so that we can properly highlight
          * everything.
+         *
+         * You may specify node and edge styles here if you would like.
+         * If you do, your specified node and edge styles will override
+         * any styling done for selected/hovered nodes and edges.
          */
-        void draw(GCanvas* canvas);
+        void draw(GCanvas* canvas,
+                  const std::unordered_map<Node*, NodeStyle>& nodeStyles = {},
+                  const std::unordered_map<Edge*, EdgeStyle>& edgeStyles = {});
+
+        /* Sets which entity is active, if any. */
+        void setActive(GraphEditor::Entity* active);
 
     private:
         EditorBase(std::shared_ptr<ViewerBase>);
@@ -66,7 +75,9 @@ namespace GraphEditor {
         };
         DragType dragType = DragType::NONE;
 
-        void drawGraph(GCanvas* canvas);
+        void drawGraph(GCanvas* canvas,
+                       const std::unordered_map<Node*, NodeStyle>& nodeStyles,
+                       const std::unordered_map<Edge*, EdgeStyle>& edgeStyles);
         void drawDraggedEdge(GCanvas* canvas);
 
         /* Handle a drag in one of two ways. */
@@ -76,8 +87,7 @@ namespace GraphEditor {
         /* Handle the mouse release when adding a new transition. */
         void finishCreatingEdge(GPoint pt);
 
-        /* Changes the active/hover node/edge. */
-        void setActive(GraphEditor::Entity* active);
+        /* Changes the hover node/edge. */
         void setHover(GraphEditor::Entity* hover);
 
         void setActiveNode(GraphEditor::Node* state);

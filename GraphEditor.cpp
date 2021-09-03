@@ -258,32 +258,34 @@ namespace GraphEditor {
         }
     }
 
-    void EditorBase::drawGraph(GCanvas* canvas) {
+    void EditorBase::drawGraph(GCanvas* canvas,
+                               const std::unordered_map<Node*, NodeStyle>& clientNodeStyles,
+                               const std::unordered_map<Edge*, EdgeStyle>& clientEdgeStyles) {
         /* Configure styles. */
-        std::unordered_map<Node*, NodeStyle> stateStyles;
-        std::unordered_map<Edge*, EdgeStyle> transitionStyles;
+        std::unordered_map<Node*, NodeStyle> nodeStyles = clientNodeStyles;
+        std::unordered_map<Edge*, EdgeStyle> edgeStyles = clientEdgeStyles;
 
         /* Active and hover states are NOT mutually exclusive! */
-        if (activeNode) {
-            stateStyles[activeNode].fillColor = kActiveStateColor;
+        if (activeNode && !clientNodeStyles.count(activeNode)) {
+            nodeStyles[activeNode].fillColor = kActiveStateColor;
         }
-        if (hoverNode) {
-            stateStyles[hoverNode].borderColor = kHoverBorderColor;
-            stateStyles[hoverNode].lineWidth   = kHoverBorderWidth;
-            stateStyles[hoverNode].radius     -= kHoverBorderWidth / 2.0;
+        if (hoverNode && !clientNodeStyles.count(hoverNode)) {
+            nodeStyles[hoverNode].borderColor = kHoverBorderColor;
+            nodeStyles[hoverNode].lineWidth   = kHoverBorderWidth;
+            nodeStyles[hoverNode].radius     -= kHoverBorderWidth / 2.0;
         }
 
         /* Active transition always takes precedence over hover transition. */
-        if (hoverEdge) {
-            transitionStyles[hoverEdge].color     = kHoverTransitionColor;
-            transitionStyles[hoverEdge].lineWidth = GraphEditor::kEdgeTolerance;
+        if (hoverEdge && !clientEdgeStyles.count(hoverEdge)) {
+            edgeStyles[hoverEdge].lineColor = kHoverTransitionColor;
+            edgeStyles[hoverEdge].lineWidth = GraphEditor::kEdgeTolerance;
         }
-        if (activeEdge) {
-            transitionStyles[activeEdge].color     = kActiveTransitionColor;
-            transitionStyles[activeEdge].lineWidth = kActiveTransitionWidth;
+        if (activeEdge && !clientEdgeStyles.count(activeEdge)) {
+            edgeStyles[activeEdge].lineColor = kActiveTransitionColor;
+            edgeStyles[activeEdge].lineWidth = kActiveTransitionWidth;
         }
 
-        mViewer->draw(canvas, stateStyles, transitionStyles);
+        mViewer->draw(canvas, nodeStyles, edgeStyles);
     }
 
     void EditorBase::drawDraggedEdge(GCanvas* canvas) {
@@ -292,8 +294,10 @@ namespace GraphEditor {
         }
     }
 
-    void EditorBase::draw(GCanvas* canvas) {
-        drawGraph(canvas);
+    void EditorBase::draw(GCanvas* canvas,
+                          const std::unordered_map<Node*, NodeStyle>& nodeStyles,
+                          const std::unordered_map<Edge*, EdgeStyle>& edgeStyles) {
+        drawGraph(canvas, nodeStyles, edgeStyles);
         drawDraggedEdge(canvas);
     }
 
