@@ -256,7 +256,7 @@ namespace GraphEditor {
         double mAspectRatio = kDefaultAspectRatio;
 
         /* Where we were told to draw. */
-        GRectangle rawBounds;
+        GRectangle rawBounds{0, 0, 0, 0};
 
         /* List of all nodes / edges. */
         std::set<std::shared_ptr<Node>> nodes;
