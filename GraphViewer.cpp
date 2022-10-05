@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <cctype>
+#include <type_traits>
 using namespace MiniGUI;
 
 namespace GraphEditor {
@@ -485,9 +486,25 @@ namespace GraphEditor {
     }
 
     namespace {
+        /* char32_t may be signed or unsigned. This code allows us to deduplicate
+         * the testing logic so that we only check against 0 if char32_t is signed.
+         */
+        template <bool b> struct BoolBox{};
+
+        template <typename CharT>
+        bool isSpaceImpl(CharT ch, BoolBox<true>) {
+            return ch >= 0 && ch <= 127 && isspace(ch);
+        }
+
+        template <typename CharT>
+        bool isSpaceImpl(CharT ch, BoolBox<false>) {
+            return ch <= 127 && isspace(ch);
+        }
+
+
         /* Is this a space character? */
         bool isSpace(char32_t ch) {
-            return ch >= 0 && ch <= 127 && isspace(ch);
+            return isSpaceImpl(ch, BoolBox<std::is_signed<char32_t>::value>());
         }
 
         /* Given a string, replaces all the spaces in the string with nonbreaking spaces.
