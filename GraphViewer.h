@@ -45,29 +45,29 @@ namespace GraphEditor {
      */
     const double kEdgeTolerance = 16.0 / 1000;
 
-    const MiniGUI::Font kEdgeFont(MiniGUI::FontFamily::UNICODE_MONOSPACE, MiniGUI::FontStyle::NORMAL, 18, "black");
-    const MiniGUI::Font kNodeFont(MiniGUI::FontFamily::UNICODE_SERIF,     MiniGUI::FontStyle::ITALIC, 18, "black");
+    const MiniGUI::Font kEdgeFont(MiniGUI::FontFamily::UNICODE_MONOSPACE, MiniGUI::FontStyle::NORMAL, 18, MiniGUI::Color::BLACK());
+    const MiniGUI::Font kNodeFont(MiniGUI::FontFamily::UNICODE_SERIF,     MiniGUI::FontStyle::ITALIC, 18, MiniGUI::Color::BLACK());
 
     /* Default graphics parameters. */
     const double kNodeBorderWidth = 3.0 / 1000; // 3px on a 1000px window
-    const std::string kNodeColor = "white";
-    const std::string kNodeBorderColor = "black";
-    const std::string kEdgeColor = "black";
+    const auto kNodeColor = MiniGUI::Color::WHITE();
+    const auto kNodeBorderColor = MiniGUI::Color::BLACK();
+    const auto kEdgeColor = MiniGUI::Color::BLACK();
 
     /* Styling for nodes. */
     struct NodeStyle {
-        double radius           = kNodeRadius;
-        double lineWidth        = kNodeBorderWidth;
-        std::string fillColor   = kNodeColor;
-        std::string borderColor = kNodeBorderColor;
-        std::string textColor   = kNodeBorderColor;
+        double radius              = kNodeRadius;
+        double lineWidth           = kNodeBorderWidth;
+        MiniGUI::Color fillColor   = kNodeColor;
+        MiniGUI::Color borderColor = kNodeBorderColor;
+        MiniGUI::Color textColor   = kNodeBorderColor;
     };
 
     /* Styling for transitions. */
     struct EdgeStyle {
-        double lineWidth       = kEdgeWidth;
-        std::string lineColor  = kEdgeColor;
-        std::string labelColor = kEdgeColor;
+        double lineWidth          = kEdgeWidth;
+        MiniGUI::Color lineColor  = kEdgeColor;
+        MiniGUI::Color labelColor = kEdgeColor;
     };
 
     /* Base type for graph entities. */
@@ -242,7 +242,7 @@ namespace GraphEditor {
          * to do this. All coordinates are in WORLD COORDINATES, not GRAPHICS COORDINATES.
          */
         void drawArrow(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                       double thickness, const std::string& color);
+                       double thickness, MiniGUI::Color color);
 
         std::size_t numNodes();
     protected:
@@ -291,10 +291,10 @@ namespace GraphEditor {
 
         void drawEdgeLabel(GCanvas* canvas, const GPoint& p0, const GPoint& p1,
                                  const std::string& label,
-                                 const std::string& color,
+                                 MiniGUI::Color color,
                                  bool hugLine);
         void drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                           double thickness, const std::string& color);
+                           double thickness, MiniGUI::Color color);
 
         /* Recalculates the renderer for each transition. */
         void calculateEdgeEndpoints();

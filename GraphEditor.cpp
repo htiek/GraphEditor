@@ -4,21 +4,21 @@
 namespace GraphEditor {
     namespace {
         /* Active state is displayed with a highlight color. */
-        const std::string kActiveStateColor = "#ffd320"; // Slide highlight color
+        const auto kActiveStateColor = MiniGUI::Color::fromHex(0xffd320); // Slide highlight color
 
         /* Hovered state is displayed with a thicker, special border. */
-        const std::string kHoverBorderColor = "blue";
+        const auto kHoverBorderColor = MiniGUI::Color::BLUE();
         const double kHoverBorderWidth = 16.0 / 1000; // 8px on a 1000px window
 
         /* How far, in radians, you need to travel before it counts as a self-loop. */
         const double kSelfTransitionThreshold = M_PI / 3;
 
         const double kNewTransitionWidth = 3.0 / 1000; // 3px on 1000px window
-        const std::string kNewTransitionColor = "red";
+        const auto kNewTransitionColor = MiniGUI::Color::RED();
 
-        const std::string kActiveTransitionColor = "#ff950e";
+        const auto kActiveTransitionColor   = MiniGUI::Color::fromHex(0xff950e);
         const double kActiveTransitionWidth = GraphEditor::kEdgeTolerance;
-        const std::string kHoverTransitionColor = "blue"; // Slide highlight dark color
+        const auto kHoverTransitionColor    = MiniGUI::Color::BLUE();
     }
 
     EditorBase::EditorBase(std::shared_ptr<ViewerBase> viewer) : mViewer(viewer) {

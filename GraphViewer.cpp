@@ -48,7 +48,7 @@ namespace GraphEditor {
         EdgeRender(ViewerBase* editor, Edge* edge): editor(editor), edge(edge) {}
         virtual ~EdgeRender() = default;
 
-        virtual void draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& textColor) const = 0;
+        virtual void draw(GCanvas* canvas, double thickness, MiniGUI::Color lineColor, MiniGUI::Color textColor) const = 0;
         virtual bool contains(const GPoint& pt) const = 0;
 
         ViewerBase* editor;
@@ -59,7 +59,7 @@ namespace GraphEditor {
     struct LineEdge: EdgeRender {
         LineEdge(ViewerBase* editor, Edge* edge, GPoint from, GPoint to) : EdgeRender(editor, edge), lineStart(from), lineEnd(to) {}
 
-        void draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& textColor) const override;
+        void draw(GCanvas* canvas, double thickness, MiniGUI::Color lineColor, MiniGUI::Color textColor) const override;
         bool contains(const GPoint& pt) const override;
 
         GPoint lineStart, lineEnd;
@@ -69,7 +69,7 @@ namespace GraphEditor {
     struct LoopEdge: EdgeRender {
         LoopEdge(ViewerBase* editor, Edge* edge, const GPoint& center, const GPoint& arrowPt) : EdgeRender(editor, edge), center(center), arrowPt(arrowPt) {}
 
-        void draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& textColor) const override;
+        void draw(GCanvas* canvas, double thickness, MiniGUI::Color lineColor, MiniGUI::Color textColor) const override;
         bool contains(const GPoint& pt) const override;
 
         /* Edge is represented by a circle. Where is the center of that
@@ -143,10 +143,10 @@ namespace GraphEditor {
 
     /* All parameters are in world coordinates. */
     void ViewerBase::drawArrow(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                               double thickness, const std::string& color) {
+                               double thickness, MiniGUI::Color color) {
         GLine line(worldToGraphics(from), worldToGraphics(to));
         line.setLineWidth(ceil(thickness * width));
-        line.setColor(color);
+        line.setColor(color.toRGB());
 
         canvas->draw(&line);
 
@@ -154,7 +154,7 @@ namespace GraphEditor {
     }
 
     void ViewerBase::drawArrowhead(GCanvas* canvas, const GPoint& from, const GPoint& to,
-                                   double thickness, const std::string& color) {
+                                   double thickness, MiniGUI::Color color) {
         /* Skip arrowheads if graph is undirected. */
         if (type() == Type::UNDIRECTED) return;
 
@@ -169,7 +169,7 @@ namespace GraphEditor {
 
         GLine line(worldToGraphics(left), worldToGraphics(to));
         line.setLineWidth(ceil(thickness * width));
-        line.setColor(color);
+        line.setColor(color.toRGB());
         canvas->draw(&line);
 
         line.setStartPoint(worldToGraphics(right));
@@ -528,7 +528,7 @@ namespace GraphEditor {
     void ViewerBase::drawEdgeLabel(GCanvas* canvas,
                                    const GPoint& p0, const GPoint& p1,
                                    const std::string& labelText,
-                                   const std::string& color,
+                                   Color color,
                                    bool hugLine) {
         GPoint from = worldToGraphics(p0);
         GPoint to   = worldToGraphics(p1);
@@ -546,7 +546,7 @@ namespace GraphEditor {
         /* Create a graphics object for the label. */
         GText text(label);
         text.setFont(font.stanfordCPPLibFontString());
-        text.setColor(font.color());
+        text.setColor(font.color().toRGB());
 
         /* Figure out where the label needs to go. */
         double theta = angleOf(to - from);
@@ -633,7 +633,7 @@ namespace GraphEditor {
         return nullptr;
     }
 
-    void LineEdge::draw(GCanvas* canvas, double thickness, const std::string& lineColor, const std::string& labelColor) const {
+    void LineEdge::draw(GCanvas* canvas, double thickness, Color lineColor, Color labelColor) const {
         editor->drawArrow(canvas, lineStart, lineEnd, thickness, lineColor);
         editor->drawEdgeLabel(canvas, lineStart, lineEnd, edge->label(), labelColor, false);
     }
@@ -645,12 +645,12 @@ namespace GraphEditor {
         return fabs(magnitudeOf(pt - center) - kLoopEdgeRadius) < kEdgeTolerance;
     }
 
-    void LoopEdge::draw(GCanvas* canvas, double width, const std::string& lineColor, const std::string& labelColor) const {
+    void LoopEdge::draw(GCanvas* canvas, double width, Color lineColor, Color labelColor) const {
         double size = 2 * editor->width * kLoopEdgeRadius;
         GPoint pt = editor->worldToGraphics(center);
 
         GOval toDraw(pt.x - size / 2, pt.y - size / 2, size, size);
-        toDraw.setColor(lineColor);
+        toDraw.setColor(lineColor.toRGB());
         toDraw.setLineWidth(ceil(editor->width * width));
         canvas->draw(&toDraw);
 
@@ -859,9 +859,9 @@ namespace GraphEditor {
         GOval mainNode(bounds.x, bounds.y, bounds.width, bounds.height);
 
         mainNode.setFilled(true);
-        mainNode.setFillColor(style.fillColor);
+        mainNode.setFillColor(style.fillColor.toRGB());
         mainNode.setLineWidth(ceil(editor->worldToGraphics(style.lineWidth)));
-        mainNode.setColor(style.borderColor);
+        mainNode.setColor(style.borderColor.toRGB());
         canvas->draw(&mainNode);
 
         /* Draw the node name. */
